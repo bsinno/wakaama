@@ -300,7 +300,7 @@ static
 void
 free_multi_option(multi_option_t *dst)
 {
-  if (dst)
+  while (dst)
   {
     multi_option_t *n = dst->next;
     if (dst->is_static == 0)
@@ -308,7 +308,7 @@ free_multi_option(multi_option_t *dst)
         lwm2m_free(dst->data);
     }
     lwm2m_free(dst);
-    free_multi_option(n);
+    dst = n;
   }
 }
 
@@ -410,6 +410,9 @@ coap_free_header(void *packet)
     free_multi_option(coap_pkt->uri_path);
     free_multi_option(coap_pkt->uri_query);
     free_multi_option(coap_pkt->location_path);
+    coap_pkt->uri_path = NULL;
+    coap_pkt->uri_query = NULL;
+    coap_pkt->location_path = NULL;
 }
 
 /*-----------------------------------------------------------------------------------*/
@@ -471,9 +474,6 @@ coap_serialize_message(void *packet, uint8_t *buffer)
   COAP_SERIALIZE_STRING_OPTION( COAP_OPTION_PROXY_URI,      proxy_uri, '\0', "Proxy-Uri")
 
   PRINTF("-Done serializing at %p----\n", option);
-
-  /* Free allocated header fields */
-  coap_free_header(packet);
 
   /* Pack payload */
   if ((option - coap_pkt->buffer)<=COAP_MAX_HEADER_SIZE)
