@@ -103,9 +103,27 @@ static int prv_check_addr(void * leftSessionH,
     return 1;
 }
 
+static int prv_check_token(lwm2m_transaction_t * transacP,
+        coap_packet_t * message)
+{
+    if (transacP->token_len == 0) return 1;
+
+    if (IS_OPTION(message, COAP_OPTION_TOKEN)) {
+        const uint8_t* token;
+        int len = coap_get_header_token(message, &token);
+        if (transacP->token_len == len) {
+            if (memcmp(transacP->token, token, len)==0) return 1;
+        }
+    }
+
+    return 0;
+}
+
 lwm2m_transaction_t * transaction_new(coap_method_t method,
                                       lwm2m_uri_t * uriP,
                                       uint16_t mID,
+                                      uint8_t token_len,
+                                      uint8_t* token,
                                       lwm2m_endpoint_type_t peerType,
                                       void * peerP)
 {
@@ -114,11 +132,11 @@ lwm2m_transaction_t * transaction_new(coap_method_t method,
 
     transacP = (lwm2m_transaction_t *)lwm2m_malloc(sizeof(lwm2m_transaction_t));
 
-    if (transacP == NULL) return NULL;
+    if (NULL == transacP) return NULL;
     memset(transacP, 0, sizeof(lwm2m_transaction_t));
 
     transacP->message = lwm2m_malloc(sizeof(coap_packet_t));
-    if (transacP->message == NULL) goto error;
+    if (NULL == transacP->message) goto error;
 
     coap_init_message(transacP->message, COAP_TYPE_CON, method, mID);
 
@@ -126,7 +144,7 @@ lwm2m_transaction_t * transaction_new(coap_method_t method,
     transacP->peerType = peerType;
     transacP->peerP = peerP;
 
-    if (uriP != NULL)
+    if (NULL != uriP)
     {
         result = snprintf(transacP->objStringID, LWM2M_STRING_ID_MAX_LEN, "%hu", uriP->objectId);
         if (result < 0 || result > LWM2M_STRING_ID_MAX_LEN) goto error;
@@ -153,6 +171,25 @@ lwm2m_transaction_t * transaction_new(coap_method_t method,
             coap_set_header_uri_path_segment(transacP->message, transacP->resourceStringID);
         }
     }
+    transacP->token_len = token_len;
+    if (0 < token_len)
+    {
+        if (NULL != token)
+        {
+            memcpy(transacP->token, token, token_len);
+        }
+        else {
+            struct timeval tv;
+            lwm2m_gettimeofday(&tv, NULL);
+            transacP->token[0] = mID;
+            transacP->token[1] = mID >> 8;
+            transacP->token[2] = tv.tv_sec;
+            transacP->token[3] = tv.tv_sec >> 8;
+            transacP->token[4] = tv.tv_sec >> 16;
+            transacP->token[5] = tv.tv_sec >> 24;
+        }
+        coap_set_header_token(transacP->message, transacP->token, token_len);
+    }
 
     return transacP;
 
@@ -163,7 +200,10 @@ error:
 
 void transaction_free(lwm2m_transaction_t * transacP)
 {
-    if (transacP->message) lwm2m_free(transacP->message);
+    if (transacP->message) {
+        coap_free_header(transacP->message);
+        lwm2m_free(transacP->message);
+    }
     if (transacP->buffer) lwm2m_free(transacP->buffer);
     lwm2m_free(transacP);
 }
@@ -198,6 +238,7 @@ void transaction_handle_response(lwm2m_context_t * contextP,
                                  void * fromSessionH,
                                  coap_packet_t * message)
 {
+    bool found = false;
     lwm2m_transaction_t * transacP;
 
     transacP = contextP->transactionList;
@@ -227,61 +268,86 @@ void transaction_handle_response(lwm2m_context_t * contextP,
 
         if (prv_check_addr(fromSessionH, targetSessionH))
         {
-            if (transacP->mID == message->mid)
+            if (!transacP->ack_received)
+            {
+                if (transacP->mID == message->mid)
+                {
+                    found = true;
+                    transacP->ack_received = true;
+                }
+            }
+            if (transacP->ack_received && prv_check_token(transacP, message))
             {
                 // HACK: If a message is sent from the monitor callback,
                 // it will arrive before the registration ACK.
                 // So we resend transaction that were denied for authentication reason.
-                if (message->code != COAP_401_UNAUTHORIZED || transacP->retrans_counter >= COAP_MAX_RETRANSMIT)
+                if ((message->code == COAP_401_UNAUTHORIZED) && (COAP_MAX_RETRANSMIT < transacP->retrans_counter))
                 {
-                    void* messageData = message->payload;
-                    size_t messageDataLength =  message->payload_len;
-
-                    if (false && IS_OPTION(message, COAP_OPTION_BLOCK2)) {
-                        uint8_t more = 0;
-                        uint32_t block_num = 0;
-                        uint32_t block_offset = 0;
-                        uint16_t block_size = REST_MAX_CHUNK_SIZE;
-                        lwm2m_blockwise_t * blockwiseP = NULL;
-                        lwm2m_uri_t * uriP = NULL;
-                        coap_packet_t* transRequest = (coap_packet_t*) transacP->message;
-
-                        coap_get_header_block2(message, &block_num, &more, &block_size, &block_offset);
-                            LOG("Blockwise: block response %u (%u/%u) %s @ %u bytes\n", block_num, block_size, REST_MAX_CHUNK_SIZE,
-                                    more ? "more..." : "last", block_offset);
-                        block_size = MIN(block_size, REST_MAX_CHUNK_SIZE);
-
-                        uriP = lwm2m_decode_uri(transRequest->uri_path);
-                        blockwiseP = blockwise_get(contextP, uriP);
-                        if (NULL == blockwiseP) {
-                            blockwiseP = blockwise_new(contextP, uriP, message, true);
-                        }
-                        else {
-                            blockwise_append(blockwiseP, block_offset, message);
-                        }
-                        if (more) {
-                            free(transacP->buffer);
-                            transacP->buffer = NULL;
-                            transRequest->type = COAP_TYPE_CON;
-                            transRequest->code = COAP_GET;
-                            transRequest->mid = contextP->nextMID++;
-                            transRequest->payload_len = 0;
-                            coap_set_header_block2(transRequest, block_num + 1, 1, block_size);
-                            transaction_send(contextP, transacP);
-                            return;
-                        }
-                        message->payload = blockwiseP->data;
-                        message->payload_len = blockwiseP->length;
-                    }
-                    if (transacP->callback != NULL)
-                    {
-                        transacP->callback(transacP, message);
-                    }
-                    transaction_remove(contextP, transacP);
-                    message->payload = messageData;
-                    message->payload_len = messageDataLength;
+                    transacP->ack_received = false;
+                    transacP->retrans_time += COAP_RESPONSE_TIMEOUT;
+                    return;
                 }
-                // we found our guy, exit
+                void* messageData = message->payload;
+                size_t messageDataLength =  message->payload_len;
+
+                if (false && IS_OPTION(message, COAP_OPTION_BLOCK2)) {
+                    uint8_t more = 0;
+                    uint32_t block_num = 0;
+                    uint32_t block_offset = 0;
+                    uint16_t block_size = REST_MAX_CHUNK_SIZE;
+                    lwm2m_blockwise_t * blockwiseP = NULL;
+                    lwm2m_uri_t * uriP = NULL;
+                    coap_packet_t* transRequest = (coap_packet_t*) transacP->message;
+
+                    coap_get_header_block2(message, &block_num, &more, &block_size, &block_offset);
+                        LOG("Blockwise: block response %u (%u/%u) %s @ %u bytes\n", block_num, block_size, REST_MAX_CHUNK_SIZE,
+                                more ? "more..." : "last", block_offset);
+                    block_size = MIN(block_size, REST_MAX_CHUNK_SIZE);
+
+                    uriP = lwm2m_decode_uri(transRequest->uri_path);
+                    blockwiseP = blockwise_get(contextP, uriP);
+                    if (NULL == blockwiseP) {
+                        blockwiseP = blockwise_new(contextP, uriP, message, true);
+                    }
+                    else {
+                        blockwise_append(blockwiseP, block_offset, message);
+                    }
+                    if (more) {
+                        free(transacP->buffer);
+                        transacP->buffer = NULL;
+                        transRequest->type = COAP_TYPE_CON;
+                        transRequest->code = COAP_GET;
+                        transRequest->mid = contextP->nextMID++;
+                        transRequest->payload_len = 0;
+                        coap_set_header_block2(transRequest, block_num + 1, 1, block_size);
+                        transaction_send(contextP, transacP);
+                        return;
+                    }
+                    message->payload = blockwiseP->data;
+                    message->payload_len = blockwiseP->length;
+                }
+                if (transacP->callback != NULL)
+                {
+                    transacP->callback(transacP, message);
+                }
+                transaction_remove(contextP, transacP);
+                message->payload = messageData;
+                message->payload_len = messageDataLength;
+                return;
+            }
+            // if we found our guy, exit
+            if (found) {
+                struct timeval tv;
+                if (0 == lwm2m_gettimeofday(&tv, NULL))
+                {
+                    transacP->retrans_time = tv.tv_sec;
+                }
+                if (transacP->response_timeout) {
+                    transacP->retrans_time += transacP->response_timeout;
+                }
+                else {
+                    transacP->retrans_time += COAP_RESPONSE_TIMEOUT * transacP->retrans_counter;
+                }
                 return;
             }
         }
@@ -308,47 +374,50 @@ int transaction_send(lwm2m_context_t * contextP,
         transacP->buffer_len = length;
     }
 
-    switch(transacP->peerType)
+    if (!transacP->ack_received)
     {
-    case ENDPOINT_CLIENT:
-        LOG("Sending %d bytes\r\n", transacP->buffer_len);
-        contextP->bufferSendCallback(((lwm2m_client_t*)transacP->peerP)->sessionH,
-                                     transacP->buffer, transacP->buffer_len, contextP->userData);
-
-        break;
-
-    case ENDPOINT_SERVER:
-        LOG("Sending %d bytes\r\n", transacP->buffer_len);
-        contextP->bufferSendCallback(((lwm2m_server_t*)transacP->peerP)->sessionH,
-                                     transacP->buffer, transacP->buffer_len, contextP->userData);
-        break;
-
-    default:
-        return 0;
-    }
-
-    if (transacP->retrans_counter == 0)
-    {
-        struct timeval tv;
-
-        if (0 == lwm2m_gettimeofday(&tv, NULL))
+        switch(transacP->peerType)
         {
-            transacP->retrans_time = tv.tv_sec;
-            transacP->retrans_counter = 1;
-        }
-        else
-        {
-            // crude error handling
-            transacP->retrans_counter = COAP_MAX_RETRANSMIT;
-        }
-    }
+        case ENDPOINT_CLIENT:
+            lwm2m_print_status("Send",  transacP->message,  transacP->buffer_len);
+            contextP->bufferSendCallback(((lwm2m_client_t*)transacP->peerP)->sessionH,
+                                         transacP->buffer, transacP->buffer_len, contextP->userData);
 
-    if (transacP->retrans_counter < COAP_MAX_RETRANSMIT)
-    {
-        transacP->retrans_time += COAP_RESPONSE_TIMEOUT * transacP->retrans_counter;
-        transacP->retrans_counter++;
+            break;
+
+        case ENDPOINT_SERVER:
+            lwm2m_print_status("Send",  transacP->message,  transacP->buffer_len);
+            contextP->bufferSendCallback(((lwm2m_server_t*)transacP->peerP)->sessionH,
+                                         transacP->buffer, transacP->buffer_len, contextP->userData);
+            break;
+
+        default:
+            return 0;
+        }
+
+        if (transacP->retrans_counter == 0)
+        {
+            struct timeval tv;
+
+            if (0 == lwm2m_gettimeofday(&tv, NULL))
+            {
+                transacP->retrans_time = tv.tv_sec;
+                transacP->retrans_counter = 1;
+            }
+            else
+            {
+                // crude error handling
+                transacP->retrans_counter = COAP_MAX_RETRANSMIT;
+            }
+        }
+
+        if (transacP->retrans_counter < COAP_MAX_RETRANSMIT)
+        {
+            transacP->retrans_time += COAP_RESPONSE_TIMEOUT * transacP->retrans_counter;
+            transacP->retrans_counter++;
+        }
     }
-    else
+    if (transacP->ack_received || COAP_MAX_RETRANSMIT <= transacP->retrans_counter)
     {
         if (transacP->callback)
         {

@@ -147,9 +147,7 @@ void lwm2m_handle_packet(lwm2m_context_t * contextP,
     coap_error_code = coap_parse_message(message, buffer, (uint16_t) length);
     if (coap_error_code == NO_ERROR)
     {
-        LOG("  Parsed: ver %u, type %u, tkl %u, code %u, mid %u\r\n", message->version, message->type,
-                message->token_len, message->code, message->mid);
-        LOG("  Payload: %.*s\r\n\n", message->payload_len, message->payload);
+        lwm2m_print_status("Recv", message, length);
 
         if (message->code >= COAP_GET && message->code <= COAP_DELETE)
         {
@@ -254,12 +252,7 @@ void lwm2m_handle_packet(lwm2m_context_t * contextP,
                 else
 #endif
 #ifdef LWM2M_CLIENT_MODE
-                if (IS_OPTION(message, COAP_OPTION_LOCATION_PATH)) {
-                    multi_option_t *location_path = message->location_path;
-                    if ((location_path->len == 2) && (memcmp(location_path->data, "rd", 2) == 0)) {
-                        handle_registration_response(contextP, fromSessionH, message);
-                    }
-                }
+                transaction_handle_response(contextP, fromSessionH, message);
 #endif
 
                 if (message->type == COAP_TYPE_CON ) {
@@ -292,9 +285,7 @@ void lwm2m_handle_packet(lwm2m_context_t * contextP,
 
     if (coap_error_code != NO_ERROR)
     {
-#ifdef WITH_LOGS
-        lwm2m_print_status("ERROR", coap_error_code, coap_error_message);
-#endif
+        LOG("ERROR %d.%02d %s%s", (coap_error_code&0xE0)>>5, coap_error_code&0x1F, lwm2m_statusToString(coap_error_code), coap_error_message);
 
         /* Set to sendable error code. */
         if (coap_error_code >= 192)
@@ -320,10 +311,10 @@ coap_status_t message_send(lwm2m_context_t * contextP,
     pktBufferLen = coap_serialize_message(message, pktBuffer);
     if (0 != pktBufferLen)
     {
-        LOG("Send message mid %u, %u bytes, %u payload, code %d.%02d %s\r\n", message->mid, pktBufferLen, message->payload_len, (message->code&0xE0)>>5, message->code&0x1F, lwm2m_statusToString(message->code));
+        lwm2m_print_status("Send", message, pktBufferLen);
         result = contextP->bufferSendCallback(sessionH, pktBuffer, pktBufferLen, contextP->userData);
-        LOG("Send message result: %d.%02d %s\r\n", (result&0xE0)>>5, result&0x1F, lwm2m_statusToString(result));
     }
+    coap_free_header(message);
 
     return result;
 }

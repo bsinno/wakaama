@@ -77,8 +77,6 @@
 #define VALUE_SMNC                      33
 #define VALUE_SMCC                      44
 
-//#define PRV_TLV_BUFFER_SIZE             128
-
 typedef struct
 {
     char ipAddresses[2][16];         // limited to 2!

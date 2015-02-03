@@ -311,7 +311,7 @@ coap_status_t lwm2m_sendNotification(lwm2m_context_t * contextP, lwm2m_watcher_t
 time_t lwm2m_notify(lwm2m_context_t * contextP, struct timeval * tv) {
     lwm2m_observed_t * observedP;
     time_t nextTransmission = 0;
-    
+
     observedP = contextP->observedList;
 
     while (observedP != NULL)
@@ -342,12 +342,12 @@ time_t lwm2m_notify(lwm2m_context_t * contextP, struct timeval * tv) {
                   }
               }
            }
-           watcherP = watcherP->next; 
+           watcherP = watcherP->next;
         }
         prv_free_notification_data(&data);
         observedP = observedP->next;
     }
-    
+
     return (nextTransmission);
 }
 
@@ -521,13 +521,6 @@ int lwm2m_observe(lwm2m_context_t * contextP,
     if (observationP == NULL) return COAP_500_INTERNAL_SERVER_ERROR;
     memset(observationP, 0, sizeof(lwm2m_observation_t));
 
-    transactionP = transaction_new(COAP_GET, uriP, contextP->nextMID++, ENDPOINT_CLIENT, (void *)clientP);
-    if (transactionP == NULL)
-    {
-        lwm2m_free(observationP);
-        return COAP_500_INTERNAL_SERVER_ERROR;
-    }
-
     observationP->id = lwm2m_list_newId((lwm2m_list_t *)clientP->observationList);
     memcpy(&observationP->uri, uriP, sizeof(lwm2m_uri_t));
     observationP->clientP = clientP;
@@ -539,8 +532,14 @@ int lwm2m_observe(lwm2m_context_t * contextP,
     token[2] = observationP->id >> 8;
     token[3] = observationP->id & 0xFF;
 
+    transactionP = transaction_new(COAP_GET, uriP, contextP->nextMID++, 4, token, ENDPOINT_CLIENT, (void *)clientP);
+    if (transactionP == NULL)
+    {
+        lwm2m_free(observationP);
+        return COAP_500_INTERNAL_SERVER_ERROR;
+    }
+
     coap_set_header_observe(transactionP->message, 0);
-    coap_set_header_token(transactionP->message, token, sizeof(token));
 
     transactionP->callback = prv_obsRequestCallback;
     transactionP->userData = (void *)observationP;

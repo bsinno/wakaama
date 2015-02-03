@@ -51,6 +51,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <inttypes.h>
+#include <ctype.h>
 
 
 int lwm2m_PlainTextToInt64(char * buffer,
@@ -214,6 +215,10 @@ const char* lwm2m_statusToString(int status)
 {
     switch(status) {
     CODE_TO_STRING(COAP_NO_ERROR);
+    CODE_TO_STRING(COAP_GET);
+    CODE_TO_STRING(COAP_POST);
+    CODE_TO_STRING(COAP_PUT);
+    CODE_TO_STRING(COAP_DELETE);
     CODE_TO_STRING(COAP_201_CREATED);
     CODE_TO_STRING(COAP_202_DELETED);
     CODE_TO_STRING(COAP_204_CHANGED);
@@ -230,9 +235,96 @@ const char* lwm2m_statusToString(int status)
     }
 }
 
-void lwm2m_print_status(const char* head, int status, const char* message)
+#define TYPE_TO_STRING(X)   case X : return #X
+
+const char* lwm2m_typeToString(int type)
 {
-    fprintf(stdout, "%s %d.%02d %s%s!\r\n", head, (status&0xE0)>>5, status&0x1F, lwm2m_statusToString(status), message);
+    switch(type) {
+    TYPE_TO_STRING(COAP_TYPE_CON);
+    TYPE_TO_STRING(COAP_TYPE_NON);
+    TYPE_TO_STRING(COAP_TYPE_ACK);
+    TYPE_TO_STRING(COAP_TYPE_RST);
+    default: return "";
+    }
+}
+
+
+void lwm2m_output_buffer(FILE * stream,
+                   const uint8_t * buffer,
+                   int length)
+{
+    int i;
+    int j;
+
+    i = 0;
+    while (i < length)
+    {
+
+        fprintf(stream, "    ");
+        for (j = 0 ; j < 16 && i+j < length; j++)
+        {
+            fprintf(stream, "%02X ", buffer[i+j]);
+        }
+        if (i != 0)
+        {
+            while (j < 16)
+            {
+                fprintf(stream, "   ");
+                j++;
+            }
+        }
+        fprintf(stream, "  ");
+        for (j = 0 ; j < 16 && i+j < length; j++)
+        {
+            if (isprint(buffer[i+j]))
+            {
+                fprintf(stream, "%c ", buffer[i+j]);
+            }
+            else
+            {
+                fprintf(stream, ". ");
+            }
+        }
+        fprintf(stream, "\n");
+
+        i += 16;
+    }
+}
+
+#ifdef WITH_LOGS
+static void prv_print_hex(const char* head, int len, const uint8_t* data)
+{
+    if (0 < len) {
+        fprintf(stdout, "  %s: %u\n", head, len);
+        lwm2m_output_buffer(stdout, data, len);
+    }
+}
+
+static void prv_print_multi_option(const char* head, multi_option_t* multi) {
+    int index = 0;
+    while (NULL != multi) {
+        if (0 < multi->len) {
+            fprintf(stdout, "  %s.%d: %u\n", head, index, multi->len);
+            lwm2m_output_buffer(stdout, (uint8_t*) multi->data, multi->len);
+        }
+        ++index;
+        multi = multi->next;
+    }
+}
+#endif
+
+void lwm2m_print_status(const char* head, coap_packet_t* message, int size)
+{
+#ifdef WITH_LOGS
+    uint8_t code = message->code;
+    fprintf(stdout, "%s: ver. %u, mid %u, %u bytes, %s, code %d.%02d %s\r\n", head, message->version, message->mid, size, lwm2m_typeToString(message->type), (code&0xE0)>>5, code&0x1F, lwm2m_statusToString(code));
+    prv_print_hex("Token", message->token_len, message->token);
+    prv_print_multi_option("URI", message->uri_path);
+    prv_print_multi_option("Query", message->uri_query);
+    prv_print_multi_option("Location", message->location_path);
+    prv_print_hex("ETag", message->etag_len, message->etag);
+    prv_print_hex("Payload", message->payload_len, message->payload);
+#endif
 }
 
 int lwm2m_adjustTimeout(time_t nextTime, time_t currentTime, struct timeval* timeoutP)

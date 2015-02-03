@@ -269,6 +269,7 @@ typedef struct
 
 
 #define LWM2M_STRING_ID_MAX_LEN 6
+#define LWM2M_TOKEN_MAX_LEN 8
 
 // Parse an URI in LWM2M format and fill the lwm2m_uri_t.
 // Return the number of characters read from buffer or 0 in case of error.
@@ -368,9 +369,6 @@ typedef struct _lwm2m_server_
     void *            sessionH;
     lwm2m_status_t    status;
     char *            location;
-    uint16_t          mid;
-    uint8_t           token_len;
-    uint8_t           token[8];
     lwm2m_attribute_data_t * attributeData; /**< list of attribute data */
 } lwm2m_server_t;
 
@@ -453,16 +451,20 @@ struct _lwm2m_transaction_
     uint16_t              mID;   // matches lwm2m_list_t::id
     lwm2m_endpoint_type_t peerType;
     void *                peerP;
-    uint8_t  retrans_counter;
-    time_t   retrans_time;
-    char objStringID[LWM2M_STRING_ID_MAX_LEN];
-    char instanceStringID[LWM2M_STRING_ID_MAX_LEN];
-    char resourceStringID[LWM2M_STRING_ID_MAX_LEN];
-    void * message;
-    uint16_t buffer_len;
-    uint8_t * buffer;
+    uint8_t               ack_received;
+    time_t                response_timeout;
+    uint8_t               retrans_counter;
+    time_t                retrans_time;
+    char                  objStringID[LWM2M_STRING_ID_MAX_LEN];
+    char                  instanceStringID[LWM2M_STRING_ID_MAX_LEN];
+    char                  resourceStringID[LWM2M_STRING_ID_MAX_LEN];
+    uint8_t               token_len;
+    uint8_t               token[LWM2M_TOKEN_MAX_LEN];
+    void *                message;
+    uint16_t              buffer_len;
+    uint8_t *             buffer;
     lwm2m_transaction_callback_t callback;
-    void * userData;
+    void *                userData;
 };
 
 /*
@@ -566,7 +568,7 @@ int lwm2m_step(lwm2m_context_t * contextP, struct timeval * timeoutP);
 void lwm2m_handle_packet(lwm2m_context_t * contextP, uint8_t * buffer, int length, void * fromSessionH);
 
 const char* lwm2m_statusToString(int status);
-void lwm2m_print_status(const char* head, int status, const char* message);
+const char* lwm2m_typeToString(int type);
 
 #ifdef LWM2M_CLIENT_MODE
 // configure the client side with the Endpoint Name, binding, MSISDN (if any) and a list of objects.

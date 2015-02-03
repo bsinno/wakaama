@@ -127,7 +127,7 @@ int object_getServers(lwm2m_context_t * contextP);
 int object_updateServersInfo(lwm2m_context_t * contextP, lwm2m_uri_t * uriP);
 
 // defined in transaction.c
-lwm2m_transaction_t * transaction_new(coap_method_t method, lwm2m_uri_t * uriP, uint16_t mID, lwm2m_endpoint_type_t peerType, void * peerP);
+lwm2m_transaction_t * transaction_new(coap_method_t method, lwm2m_uri_t * uriP, uint16_t mID, uint8_t token_len, uint8_t* token, lwm2m_endpoint_type_t peerType, void * peerP);
 int transaction_send(lwm2m_context_t * contextP, lwm2m_transaction_t * transacP);
 void transaction_free(lwm2m_transaction_t * transacP);
 void transaction_remove(lwm2m_context_t * contextP, lwm2m_transaction_t * transacP);
@@ -153,7 +153,6 @@ time_t lwm2m_notify(lwm2m_context_t * contextP, struct timeval * tv);
 // defined in registration.c
 coap_status_t handle_registration_request(lwm2m_context_t * contextP, lwm2m_uri_t * uriP, void * fromSessionH, coap_packet_t * message, coap_packet_t * response);
 void registration_deregister(lwm2m_context_t * contextP, lwm2m_server_t * serverP);
-void handle_registration_response(lwm2m_context_t * contextP, void * fromSessionH, coap_packet_t * message);
 void prv_freeClient(lwm2m_client_t * clientP);
 
 // defined in packet.c
@@ -165,6 +164,7 @@ void observation_remove(lwm2m_client_t * clientP, lwm2m_observation_t * observat
 
 // defined in utils.c
 lwm2m_binding_t lwm2m_stringToBinding(const char *buffer, size_t length);
+void lwm2m_print_status(const char* head, coap_packet_t* message, int size);
 
 // defined in attributes.c
 lwm2m_attribute_data_t * lwm2m_getAttributes(lwm2m_server_t * serverP, lwm2m_uri_t * uriP);
