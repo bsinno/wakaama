@@ -429,3 +429,17 @@ int transaction_send(lwm2m_context_t * contextP,
 
     return 0;
 }
+/**
+ * If payload gets invalid (e.g. original array gets out of scope when returning from function),
+ * it should be recovered from the serialized message to get proper LOG.
+ */
+void transaction_recover_payload(lwm2m_transaction_t * transacP)
+{
+    if (NULL != transacP) {
+        coap_packet_t *message = (coap_packet_t *) transacP->message;
+        if (0 <  message->payload_len) {
+            message->payload = transacP->buffer + transacP->buffer_len - message->payload_len;
+        }
+    }
+}
+

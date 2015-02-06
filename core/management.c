@@ -236,6 +236,7 @@ static int prv_make_operation(lwm2m_context_t * contextP,
                               lwm2m_result_callback_t callback,
                               void * userData)
 {
+    int result;
     lwm2m_client_t * clientP;
     lwm2m_transaction_t * transaction;
     dm_data_t * dataP;
@@ -275,7 +276,11 @@ static int prv_make_operation(lwm2m_context_t * contextP,
 
     contextP->transactionList = (lwm2m_transaction_t *)LWM2M_LIST_ADD(contextP->transactionList, transaction);
 
-    return transaction_send(contextP, transaction);
+    result = transaction_send(contextP, transaction);
+
+    transaction_recover_payload(transaction);
+
+    return result;
 }
 
 int lwm2m_dm_read(lwm2m_context_t * contextP,

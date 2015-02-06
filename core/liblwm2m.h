@@ -451,15 +451,15 @@ struct _lwm2m_transaction_
     uint16_t              mID;   // matches lwm2m_list_t::id
     lwm2m_endpoint_type_t peerType;
     void *                peerP;
-    uint8_t               ack_received;
-    time_t                response_timeout;
+    uint8_t               ack_received; // indicates, that the ACK was received
+    time_t                response_timeout; // timeout to wait for response, if token is used. When 0, use calculated acknowledge timeout.
     uint8_t               retrans_counter;
     time_t                retrans_time;
     char                  objStringID[LWM2M_STRING_ID_MAX_LEN];
     char                  instanceStringID[LWM2M_STRING_ID_MAX_LEN];
     char                  resourceStringID[LWM2M_STRING_ID_MAX_LEN];
-    uint8_t               token_len;
-    uint8_t               token[LWM2M_TOKEN_MAX_LEN];
+    uint8_t               token_len; // token length, if transaction should wait for response
+    uint8_t               token[LWM2M_TOKEN_MAX_LEN]; // token
     void *                message;
     uint16_t              buffer_len;
     uint8_t *             buffer;
