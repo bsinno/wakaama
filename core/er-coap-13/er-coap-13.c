@@ -484,8 +484,9 @@ coap_serialize_message(void *packet, uint8_t *buffer)
       *option = 0xFF;
       ++option;
     }
+    coap_pkt->payload_len = MIN(REST_MAX_CHUNK_SIZE, coap_pkt->payload_len);
     /* move truncating payload from coap_set_payload for block transfer */
-    memmove(option, coap_pkt->payload, MIN(REST_MAX_CHUNK_SIZE, coap_pkt->payload_len));
+    memmove(option, coap_pkt->payload, coap_pkt->payload_len);
   }
   else
   {
