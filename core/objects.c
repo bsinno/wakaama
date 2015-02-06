@@ -400,7 +400,7 @@ bool object_isInstanceNew(lwm2m_context_t * contextP,
     return true;
 }
 
-int prv_getRegisterPayload(lwm2m_context_t * contextP,
+int object_getRegisterPayload(lwm2m_context_t * contextP,
                            char * buffer,
                            size_t length)
 {

@@ -166,7 +166,7 @@ static int prv_register(lwm2m_context_t * contextP, lwm2m_server_t * server, uin
 
     lwm2m_transaction_t * transaction;
 
-    payload_length = prv_getRegisterPayload(contextP, payload, sizeof(payload));
+    payload_length = object_getRegisterPayload(contextP, payload, sizeof(payload));
     if (payload_length == 0) return INTERNAL_SERVER_ERROR_5_00;
 
     query_length = prv_getRegistrationQuery(contextP, server, query, sizeof(query));
