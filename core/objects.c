@@ -82,6 +82,61 @@ static lwm2m_object_t * prv_find_object(lwm2m_context_t * contextP,
     return lwm2m_find_object(contextP, Id);
 }
 
+static lwm2m_server_t *prv_find_server(lwm2m_context_t * contextP,  uint16_t id)
+{
+    lwm2m_server_t *targetP = NULL;
+    lwm2m_list_t * serverInstP;
+    lwm2m_object_t * serverObjP;
+
+    serverObjP = lwm2m_find_object(contextP, LWM2M_SERVER_OBJECT_ID);
+    if (serverObjP == NULL) {
+        return NULL;
+    }
+
+    serverInstP = serverObjP->instanceList;
+    while (NULL != serverInstP) {
+        if (serverInstP->id == id) {
+            break;
+        }
+        serverInstP = serverInstP->next;
+    }
+
+    if (NULL != serverInstP) {
+        int size = 1;
+        lwm2m_tlv_t * tlvP = lwm2m_tlv_new(size);
+        if (tlvP == NULL) return NULL;
+        tlvP[0].id = LWM2M_SERVER_SHORT_ID_ID;
+        if (serverObjP->readFunc(serverInstP->id, &size, &tlvP, serverObjP) == COAP_205_CONTENT) {
+            int64_t value;
+            if (1 == lwm2m_tlv_decode_int(tlvP, &value)) {
+                targetP = (lwm2m_server_t *)LWM2M_LIST_FIND(contextP->serverList, value);
+            }
+        }
+        lwm2m_tlv_free(1, tlvP);
+    }
+
+    return targetP;
+}
+
+static coap_status_t prv_execute_server(lwm2m_context_t * contextP, uint16_t instId, uint16_t resId)
+{
+    lwm2m_server_t *targetP = prv_find_server(contextP, instId);
+    if (NULL == targetP) return COAP_404_NOT_FOUND;
+
+    switch(resId) {
+    case LWM2M_SERVER_DISABLE_ID:
+        targetP->request = REQUEST_REG_DISABLE;
+        return COAP_204_CHANGED;
+        break;
+    case LWM2M_SERVER_UPDATE_ID:
+        targetP->request = REQUEST_REG_UPDATE;
+        return COAP_204_CHANGED;
+        break;
+    }
+
+    return COAP_404_NOT_FOUND;
+}
+
 coap_status_t object_read(lwm2m_context_t * contextP,
                           lwm2m_uri_t * uriP,
                           char ** bufferP,
@@ -315,13 +370,19 @@ coap_status_t object_execute(lwm2m_context_t * contextP,
                              char * buffer,
                              int length)
 {
+    coap_status_t result;
     lwm2m_object_t * targetP;
 
     targetP = prv_find_object(contextP, uriP->objectId);
     if (NULL == targetP) return NOT_FOUND_4_04;
     if (NULL == targetP->executeFunc) return METHOD_NOT_ALLOWED_4_05;
 
-    return targetP->executeFunc(uriP->instanceId, uriP->resourceId, buffer, length, targetP);
+    result = targetP->executeFunc(uriP->instanceId, uriP->resourceId, buffer, length, targetP);
+
+    if (COAP_204_CHANGED == result && uriP->objectId == LWM2M_SERVER_OBJECT_ID) {
+        result = prv_execute_server(contextP, uriP->instanceId, uriP->resourceId);
+    }
+    return result;
 }
 
 coap_status_t object_create(lwm2m_context_t * contextP,
@@ -456,6 +517,8 @@ int object_getRegisterPayload(lwm2m_context_t * contextP,
     return index;
 }
 
+
+
 static lwm2m_list_t * prv_findServerInstance(lwm2m_object_t * objectP,
                                              uint16_t shortID)
 {
@@ -472,7 +535,6 @@ static lwm2m_list_t * prv_findServerInstance(lwm2m_object_t * objectP,
     while (NULL != instanceP)
     {
         int64_t value;
-
         if (objectP->readFunc(instanceP->id, &size, &tlvP, objectP) != COAP_205_CONTENT)
         {
             instanceP = NULL;
@@ -495,6 +557,30 @@ static lwm2m_list_t * prv_findServerInstance(lwm2m_object_t * objectP,
 
     lwm2m_tlv_free(1, tlvP);
     return instanceP;
+}
+
+static void prv_getOptionalTime(lwm2m_object_t * objectP,
+                               uint16_t instanceID, uint16_t resourceID,
+                               lwm2m_tlv_t * tlvP, uint32_t* valueP)
+{
+    int64_t value;
+    int size = 1;
+
+    lwm2m_tlv_clear_values(size, tlvP);
+    tlvP[0].id = resourceID;
+    if (objectP->readFunc(instanceID, &size, &tlvP, objectP) == COAP_205_CONTENT)
+    {
+        if (lwm2m_tlv_decode_int(tlvP, &value))
+        {
+            if (value < 0) {
+                value = 0;
+            }
+            else if (0xffffffff < value) {
+                value = 0xffffffff;
+            }
+            *valueP = value;
+        }
+    }
 }
 
 static int prv_getMandatoryInfo(lwm2m_object_t * objectP,
@@ -538,6 +624,10 @@ static int prv_getMandatoryInfo(lwm2m_object_t * objectP,
         result = -1;
         goto error;
     }
+
+    prv_getOptionalTime(objectP,instanceID, LWM2M_SERVER_MIN_PERIOD_ID, tlvP, &(targetP->defMinPeriod));
+    prv_getOptionalTime(objectP,instanceID, LWM2M_SERVER_MAX_PERIOD_ID, tlvP, &(targetP->defMaxPeriod));
+    prv_getOptionalTime(objectP,instanceID, LWM2M_SERVER_TIMEOUT_ID, tlvP, &(targetP->disableTimeout));
 
 error:
     lwm2m_tlv_free(2, tlvP);
@@ -635,7 +725,7 @@ int object_getServers(lwm2m_context_t * contextP)
                 lwm2m_free(tlvP);
                 return -1;
             }
-
+            targetP->request = REQUEST_REG_REGISTER;
             contextP->serverList = (lwm2m_server_t*)LWM2M_LIST_ADD(contextP->serverList, targetP);
         }
         lwm2m_free(tlvP);
@@ -663,19 +753,21 @@ int object_updateServersInfo(lwm2m_context_t * contextP, lwm2m_uri_t * uriP)
             lwm2m_tlv_t * tlvP = lwm2m_tlv_new(size);
             if (tlvP == NULL) return -1;
             tlvP[0].id = LWM2M_SERVER_SHORT_ID_ID;
+            result = COAP_500_INTERNAL_SERVER_ERROR;
             if (serverObjP->readFunc(serverInstP->id, &size, &tlvP, serverObjP) == COAP_205_CONTENT) {
                 int64_t value;
                 if (1 == lwm2m_tlv_decode_int(tlvP, &value)) {
                     lwm2m_server_t *targetP = (lwm2m_server_t *)LWM2M_LIST_FIND(contextP->serverList, value);
                     if (NULL != targetP) {
-                        if (0 != prv_getMandatoryInfo(serverObjP, serverInstP->id, targetP))
+                        if (0==prv_getMandatoryInfo(serverObjP, serverInstP->id, targetP))
                         {
-                            result = COAP_500_INTERNAL_SERVER_ERROR;
+                            result = COAP_NO_ERROR;
                         }
                     }
                 }
             }
             lwm2m_tlv_free(1, tlvP);
+            if (LWM2M_URI_IS_SET_INSTANCE(uriP)) break;
         }
         serverInstP = serverInstP->next;
     }

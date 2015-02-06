@@ -46,6 +46,9 @@ typedef struct _server_instance_
     uint16_t    instanceId;            // matches lwm2m_list_t::id
     uint16_t    shortServerId;
     uint32_t    lifetime;
+    uint32_t    defMinPeriod;
+    uint32_t    defMaxPeriod;
+    uint32_t    disableTimeout;
     bool        storing;
     char        binding[4];
 } server_instance_t;
@@ -69,16 +72,22 @@ static uint8_t prv_get_value(lwm2m_tlv_t * tlvP,
         else return COAP_500_INTERNAL_SERVER_ERROR;
 
     case LWM2M_SERVER_MIN_PERIOD_ID:
-        return COAP_404_NOT_FOUND;
+        lwm2m_tlv_encode_int(targetP->defMinPeriod, tlvP);
+        if (0 != tlvP->length) return COAP_205_CONTENT;
+        else return COAP_500_INTERNAL_SERVER_ERROR;
 
     case LWM2M_SERVER_MAX_PERIOD_ID:
-        return COAP_404_NOT_FOUND;
+        lwm2m_tlv_encode_int(targetP->defMaxPeriod, tlvP);
+        if (0 != tlvP->length) return COAP_205_CONTENT;
+        else return COAP_500_INTERNAL_SERVER_ERROR;
 
     case LWM2M_SERVER_DISABLE_ID:
         return COAP_405_METHOD_NOT_ALLOWED;
 
     case LWM2M_SERVER_TIMEOUT_ID:
-        return COAP_404_NOT_FOUND;
+        lwm2m_tlv_encode_int(targetP->disableTimeout, tlvP);
+        if (0 != tlvP->length) return COAP_205_CONTENT;
+        else return COAP_500_INTERNAL_SERVER_ERROR;
 
     case LWM2M_SERVER_STORING_ID:
         lwm2m_tlv_encode_bool(targetP->storing, tlvP);
@@ -114,7 +123,7 @@ static uint8_t prv_server_read(uint16_t instanceId,
     // is the server asking for the full instance ?
     if (*numDataP == 0)
     {
-        uint16_t resList[] = {LWM2M_SERVER_SHORT_ID_ID, LWM2M_SERVER_LIFETIME_ID, LWM2M_SERVER_STORING_ID, LWM2M_SERVER_BINDING_ID};
+        uint16_t resList[] = {LWM2M_SERVER_SHORT_ID_ID, LWM2M_SERVER_LIFETIME_ID, LWM2M_SERVER_MIN_PERIOD_ID, LWM2M_SERVER_MAX_PERIOD_ID, LWM2M_SERVER_TIMEOUT_ID, LWM2M_SERVER_STORING_ID, LWM2M_SERVER_BINDING_ID};
         int nbRes = sizeof(resList)/sizeof(uint16_t);
 
         *dataArrayP = lwm2m_tlv_new(nbRes);
@@ -181,20 +190,77 @@ static uint8_t prv_server_write(uint16_t instanceId,
         break;
 
         case LWM2M_SERVER_MIN_PERIOD_ID:
-            result = COAP_404_NOT_FOUND;
-            break;
+        {
+            int64_t value;
+
+            if (1 == lwm2m_tlv_decode_int(dataArray + i, &value))
+            {
+                if (value >= 0 && value <= 0xFFFFFFFF)
+                {
+                    targetP->defMinPeriod = value;
+                    result = COAP_204_CHANGED;
+                }
+                else
+                {
+                    result = COAP_406_NOT_ACCEPTABLE;
+                }
+            }
+            else
+            {
+                result = COAP_400_BAD_REQUEST;
+            }
+        }
+        break;
 
         case LWM2M_SERVER_MAX_PERIOD_ID:
-            result = COAP_404_NOT_FOUND;
-            break;
+        {
+            int64_t value;
+
+            if (1 == lwm2m_tlv_decode_int(dataArray + i, &value))
+            {
+                if (value >= 0 && value <= 0xFFFFFFFF)
+                {
+                    targetP->defMaxPeriod = value;
+                    result = COAP_204_CHANGED;
+                }
+                else
+                {
+                    result = COAP_406_NOT_ACCEPTABLE;
+                }
+            }
+            else
+            {
+                result = COAP_400_BAD_REQUEST;
+            }
+        }
+        break;
 
         case LWM2M_SERVER_DISABLE_ID:
             result = COAP_405_METHOD_NOT_ALLOWED;
             break;
 
         case LWM2M_SERVER_TIMEOUT_ID:
-            result = COAP_404_NOT_FOUND;
-            break;
+        {
+            int64_t value;
+
+            if (1 == lwm2m_tlv_decode_int(dataArray + i, &value))
+            {
+                if (value >= 0 && value <= 0xFFFFFFFF)
+                {
+                    targetP->disableTimeout = value;
+                    result = COAP_204_CHANGED;
+                }
+                else
+                {
+                    result = COAP_406_NOT_ACCEPTABLE;
+                }
+            }
+            else
+            {
+                result = COAP_400_BAD_REQUEST;
+            }
+        }
+        break;
 
         case LWM2M_SERVER_STORING_ID:
         {
@@ -258,9 +324,12 @@ static uint8_t prv_server_execute(uint16_t instanceId,
     switch (resourceId)
     {
     case LWM2M_SERVER_DISABLE_ID:
-        return COAP_404_NOT_FOUND;
+        // executed in core, if COAP_204_CHANGED is returned
+        if (0 < targetP->disableTimeout) return COAP_204_CHANGED;
+        else return COAP_405_METHOD_NOT_ALLOWED;
     case LWM2M_SERVER_UPDATE_ID:
-        return COAP_501_NOT_IMPLEMENTED;
+        // executed in core, if COAP_204_CHANGED is returned
+        return COAP_204_CHANGED;
     default:
         return COAP_405_METHOD_NOT_ALLOWED;
     }

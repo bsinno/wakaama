@@ -131,7 +131,6 @@ static void prv_handleRegistrationReply(lwm2m_transaction_t * transacP,
     switch(targetP->status)
     {
     case STATE_REG_PENDING:
-    {
         if (0 == lwm2m_gettimeofday(&tv, NULL))
         {
             targetP->registration = tv.tv_sec;
@@ -144,11 +143,10 @@ static void prv_handleRegistrationReply(lwm2m_transaction_t * transacP,
         }
         else
         {
-            LOG("server %d status DEREGISTERED, register failed!\n", targetP->shortID);
+            LOG("server %d status REG_FAILED, register failed!\n", targetP->shortID);
             targetP->status = STATE_REG_FAILED;
         }
-    }
-    break;
+        break;
     default:
         break;
     }
@@ -165,6 +163,15 @@ static int prv_register(lwm2m_context_t * contextP, lwm2m_server_t * server, uin
     int payload_length;
 
     lwm2m_transaction_t * transaction;
+
+    if (server->status == STATE_REG_PENDING
+     || server->status == STATE_REG_UPDATE_PENDING
+     || server->status == STATE_DEREG_PENDING
+     || server->status == STATE_DISABLE_PENDING
+     || server->status == STATE_REGISTERED)
+        {
+            return SERVICE_UNAVAILABLE_5_03;
+        }
 
     payload_length = object_getRegisterPayload(contextP, payload, sizeof(payload));
     if (payload_length == 0) return INTERNAL_SERVER_ERROR_5_00;
@@ -233,7 +240,6 @@ static void prv_handleRegistrationUpdateReply(lwm2m_transaction_t * transacP,
     switch(targetP->status)
     {
     case STATE_REG_UPDATE_PENDING:
-    {
         if (0 == lwm2m_gettimeofday(&tv, NULL))
         {
             targetP->registration = tv.tv_sec;
@@ -243,45 +249,66 @@ static void prv_handleRegistrationUpdateReply(lwm2m_transaction_t * transacP,
             LOG("server %d status REGISTERED, update succeeded\n", targetP->shortID);
             targetP->status = STATE_REGISTERED;
         }
+        else if (packet != NULL && packet->code == NOT_FOUND_4_04)
+        {
+            LOG("server %d status DEREGISTERED, update denied\n", targetP->shortID);
+            if (REQUEST_REG_NONE == targetP->request)
+            {
+                targetP->status = STATE_DEREGISTERED;
+                targetP->request = REQUEST_REG_REGISTER;
+            }
+            else {
+                targetP->status = STATE_REG_FAILED;
+            }
+        }
         else
         {
-            LOG("server %d status DEREGISTERED, update failed\n", targetP->shortID);
+            LOG("server %d status REG_FAILED, update failed\n", targetP->shortID);
             targetP->status = STATE_REG_FAILED;
         }
-    }
-    break;
+        break;
     default:
         break;
     }
 }
 
-static int prv_update_registration(lwm2m_context_t * contextP, lwm2m_server_t * server) {
+static int prv_update_registration(lwm2m_context_t * contextP, lwm2m_server_t * serverP) {
     lwm2m_transaction_t * transaction;
 
-    transaction = transaction_new(COAP_PUT, NULL, contextP->nextMID++, 4, NULL, ENDPOINT_SERVER, (void *)server);
+    if (serverP->status == STATE_DEREGISTERED
+     || serverP->status == STATE_REG_PENDING
+     || serverP->status == STATE_REG_UPDATE_PENDING
+     || serverP->status == STATE_DEREG_PENDING
+     || serverP->status == STATE_DISABLE_PENDING
+     || serverP->status == STATE_DISABLED)
+        {
+            return SERVICE_UNAVAILABLE_5_03;
+        }
+
+    transaction = transaction_new(COAP_PUT, NULL, contextP->nextMID++, 4, NULL, ENDPOINT_SERVER, (void *)serverP);
     if (transaction == NULL) return INTERNAL_SERVER_ERROR_5_00;
 
-    coap_set_header_uri_path(transaction->message, server->location);
+    coap_set_header_uri_path(transaction->message, serverP->location);
 
-    if (server->lifetimeChanged) {
+    if (serverP->lifetimeChanged) {
         char query[20];
         int query_length;
-        query_length = snprintf(query, sizeof(query), QUERY_LIFETIME "%d", server->lifetime);
+        query_length = snprintf(query, sizeof(query), QUERY_LIFETIME "%d", serverP->lifetime);
         if (query_length <= 1) return 0;
         coap_set_header_uri_query(transaction->message, query);
-        server->lifetimeChanged = 0;
+        serverP->lifetimeChanged = 0;
     }
 
     transaction->callback = prv_handleRegistrationUpdateReply;
-    transaction->userData = (void *) server;
+    transaction->userData = (void *) serverP;
 
     contextP->transactionList = (lwm2m_transaction_t *)LWM2M_LIST_ADD(contextP->transactionList, transaction);
 
     if (transaction_send(contextP, transaction) == 0)
     {
-        server->status = STATE_REG_UPDATE_PENDING;
+        serverP->status = STATE_REG_UPDATE_PENDING;
     }
-    return 0;
+    return NO_ERROR;
 }
 
 // update the registration of a given server
@@ -310,14 +337,13 @@ int lwm2m_update_registration(lwm2m_context_t * contextP, uint16_t shortServerID
 // for each server update the registration if needed
 int lwm2m_update_registrations(lwm2m_context_t * contextP, uint32_t currentTime, struct timeval * timeoutP)
 {
-#ifdef WITH_LOGS
-    static uint32_t lastLogTime = 0;
-    bool log = false;
-#endif
     int32_t interval;
     lwm2m_server_t * targetP = contextP->serverList;
 
 #ifdef WITH_LOGS
+    static uint32_t lastLogTime = 0;
+    bool log = false;
+
     if (currentTime - (lastLogTime + 60) < 0) {
         log = true;
         lastLogTime = currentTime;
@@ -326,6 +352,30 @@ int lwm2m_update_registrations(lwm2m_context_t * contextP, uint32_t currentTime,
 
     while (targetP != NULL)
     {
+        switch(targetP->request) {
+        case REQUEST_REG_NONE:
+            break;
+        case REQUEST_REG_REGISTER:
+            if (NO_ERROR == prv_register(contextP, targetP, currentTime)) {
+                timeoutP->tv_sec = 1;
+                targetP->request = REQUEST_REG_NONE;
+            }
+            break;
+        case REQUEST_REG_DISABLE:
+            registration_deregister(contextP, targetP);
+            if (STATE_DEREG_PENDING == targetP->status) {
+                targetP->status = STATE_DISABLE_PENDING;
+                targetP->request = REQUEST_REG_NONE;
+                timeoutP->tv_sec = 1;
+            }
+            break;
+        case REQUEST_REG_UPDATE:
+            if (NO_ERROR == prv_update_registration(contextP, targetP)) {
+                targetP->request = REQUEST_REG_NONE;
+                timeoutP->tv_sec = 1;
+            }
+            break;
+        }
         switch (targetP->status) {
             case STATE_REGISTERED:
 #ifdef WITH_LOGS
@@ -343,9 +393,6 @@ int lwm2m_update_registrations(lwm2m_context_t * contextP, uint32_t currentTime,
                 break;
             case STATE_DEREGISTERED:
                 LOG("server %d status DEREGISTERED\n", targetP->shortID);
-                // TODO: is it disabled?
-                prv_register(contextP, targetP, currentTime);
-                timeoutP->tv_sec = 1;
                 break;
             case STATE_REG_PENDING:
                 LOG("server %d status REG_PENDING\n", targetP->shortID);
@@ -368,6 +415,21 @@ int lwm2m_update_registrations(lwm2m_context_t * contextP, uint32_t currentTime,
                     prv_register(contextP, targetP, currentTime);
                 }
                 break;
+            case STATE_DISABLE_PENDING:
+                LOG("server %d status DISABLE_PENDING\n", targetP->shortID);
+                break;
+            case STATE_DISABLED:
+#ifdef WITH_LOGS
+                if (log) {
+                    LOG("server %d status DISABLED\n", targetP->shortID);
+                }
+#endif
+                if (0 == lwm2m_adjustTimeout(targetP->registration + targetP->disableTimeout, currentTime, timeoutP))
+                {
+                    LOG("server %d status DISABLED, register\n", targetP->shortID);
+                    prv_register(contextP, targetP, currentTime);
+                }
+                break;
         }
         targetP = targetP->next;
     }
@@ -377,15 +439,13 @@ int lwm2m_update_registrations(lwm2m_context_t * contextP, uint32_t currentTime,
 static void prv_handleDeregistrationReply(lwm2m_transaction_t * transacP,
                                         void * message)
 {
-    lwm2m_server_t * targetP;
+    struct timeval tv;
+    lwm2m_server_t * targetP = (lwm2m_server_t *)(transacP->peerP);
     coap_packet_t * packet = (coap_packet_t *)message;
-
-    targetP = (lwm2m_server_t *)(transacP->peerP);
 
     switch(targetP->status)
     {
     case STATE_DEREG_PENDING:
-    {
         if (packet != NULL && packet->code == DELETED_2_02)
         {
             LOG("server %d status DEREGISTERED, deregister succeeded\n", targetP->shortID);
@@ -395,8 +455,22 @@ static void prv_handleDeregistrationReply(lwm2m_transaction_t * transacP,
             LOG("server %d status DEREGISTERED, deregister failed\n", targetP->shortID);
         }
         targetP->status = STATE_DEREGISTERED;
-    }
-    break;
+        break;
+    case STATE_DISABLE_PENDING:
+        if (0 == lwm2m_gettimeofday(&tv, NULL))
+        {
+            targetP->registration = tv.tv_sec;
+        }
+        if (packet != NULL && packet->code == DELETED_2_02)
+        {
+            LOG("server %d status DISABLED, disable succeeded\n", targetP->shortID);
+        }
+        else
+        {
+            LOG("server %d status DISABLED, disable failed\n", targetP->shortID);
+        }
+        targetP->status = STATE_DISABLED;
+        break;
     default:
         break;
     }
@@ -407,7 +481,10 @@ void registration_deregister(lwm2m_context_t * contextP,
 {
     if (serverP->status == STATE_DEREGISTERED
      || serverP->status == STATE_REG_PENDING
-     || serverP->status == STATE_DEREG_PENDING)
+     || serverP->status == STATE_REG_UPDATE_PENDING
+     || serverP->status == STATE_DEREG_PENDING
+     || serverP->status == STATE_DISABLE_PENDING
+     || serverP->status == STATE_DISABLED)
         {
             return;
         }
@@ -424,7 +501,7 @@ void registration_deregister(lwm2m_context_t * contextP,
     contextP->transactionList = (lwm2m_transaction_t *)LWM2M_LIST_ADD(contextP->transactionList, transaction);
     if (transaction_send(contextP, transaction) == 0)
     {
-        serverP->status = STATE_REG_PENDING;
+        serverP->status = STATE_DEREG_PENDING;
     }
 }
 #endif

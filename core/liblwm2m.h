@@ -312,8 +312,18 @@ typedef enum
     STATE_REGISTERED,         // successfully registered
     STATE_REG_FAILED,         // last registration failed
     STATE_REG_UPDATE_PENDING, // registration update pending
-    STATE_DEREG_PENDING       // deregistration pending
+    STATE_DEREG_PENDING,      // deregistration pending
+    STATE_DISABLE_PENDING,    // registration disable pending
+    STATE_DISABLED,           // registration disabled
 } lwm2m_status_t;
+
+typedef enum
+{
+    REQUEST_REG_NONE = 0,     // no registration request
+    REQUEST_REG_REGISTER,     // registration requested
+    REQUEST_REG_UPDATE,       // registration update requested
+    REQUEST_REG_DISABLE,      // registration disable requested
+} lwm2m_request_t;
 
 typedef enum
 {
@@ -366,9 +376,13 @@ typedef struct _lwm2m_server_
     };
     uint32_t          lifetime;     // lifetime of the registration in sec or 0 if default value (86400 sec), also used as hold off time for the bootstrap server
     uint32_t          registration; // date of the last registration in sec
+    uint32_t          defMinPeriod;
+    uint32_t          defMaxPeriod;
+    uint32_t          disableTimeout;
     lwm2m_binding_t   binding;      // client connection mode with this server
     void *            sessionH;
     lwm2m_status_t    status;
+    lwm2m_request_t   request;
     char *            location;
     lwm2m_attribute_data_t * attributeData; /**< list of attribute data */
 } lwm2m_server_t;
