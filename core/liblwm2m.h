@@ -222,6 +222,7 @@ typedef struct
 lwm2m_tlv_t * lwm2m_tlv_new(int size);
 int  lwm2m_tlv_parse(char * buffer, size_t bufferLen, lwm2m_tlv_t ** dataP);
 int  lwm2m_tlv_serialize(int size, lwm2m_tlv_t * tlvP, char ** bufferP);
+void lwm2m_tlv_clear_values(int size, lwm2m_tlv_t * tlvP);
 void lwm2m_tlv_free(int size, lwm2m_tlv_t * tlvP);
 
 void lwm2m_tlv_encode_int(int64_t data, lwm2m_tlv_t * tlvP);

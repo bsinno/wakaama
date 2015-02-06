@@ -469,7 +469,7 @@ static lwm2m_list_t * prv_findServerInstance(lwm2m_object_t * objectP,
     tlvP->id = LWM2M_SERVER_SHORT_ID_ID;
 
     instanceP = objectP->instanceList;
-    while (instanceP != NULL)
+    while (NULL != instanceP)
     {
         int64_t value;
 
@@ -487,9 +487,13 @@ static lwm2m_list_t * prv_findServerInstance(lwm2m_object_t * objectP,
             }
         }
         instanceP = instanceP->next;
+        if (NULL != instanceP)
+        {
+            lwm2m_tlv_clear_values(1, tlvP);
+        }
     }
 
-    lwm2m_free(tlvP);
+    lwm2m_tlv_free(1, tlvP);
     return instanceP;
 }
 
@@ -498,8 +502,9 @@ static int prv_getMandatoryInfo(lwm2m_object_t * objectP,
                                 lwm2m_server_t * targetP)
 {
     lwm2m_tlv_t * tlvP;
-    int size;
     int64_t value;
+    int size;
+    int result = 0;
 
     size = 2;
     tlvP = lwm2m_tlv_new(size);
@@ -510,15 +515,15 @@ static int prv_getMandatoryInfo(lwm2m_object_t * objectP,
 
     if (objectP->readFunc(instanceID, &size, &tlvP, objectP) != COAP_205_CONTENT)
     {
-        lwm2m_free(tlvP);
-        return -1;
+        result = -1;
+        goto error;
     }
 
     if (0 == lwm2m_tlv_decode_int(tlvP, &value)
      || value < 0 || value >0xFFFFFFFF)             // This is an implementation limit
     {
-        lwm2m_free(tlvP);
-        return -1;
+        result = -1;
+        goto error;
     }
     if (targetP->lifetime != value) {
         targetP->lifetimeChanged = 1;
@@ -528,15 +533,15 @@ static int prv_getMandatoryInfo(lwm2m_object_t * objectP,
     }
 
     targetP->binding = lwm2m_stringToBinding((const char*)tlvP[1].value, tlvP[1].length);
-
-    lwm2m_free(tlvP);
-
     if (targetP->binding == BINDING_UNKNOWN)
     {
-        return -1;
+        result = -1;
+        goto error;
     }
 
-    return 0;
+error:
+    lwm2m_tlv_free(2, tlvP);
+    return result;
 }
 
 int object_getServers(lwm2m_context_t * contextP)
@@ -670,7 +675,7 @@ int object_updateServersInfo(lwm2m_context_t * contextP, lwm2m_uri_t * uriP)
                     }
                 }
             }
-            lwm2m_free(tlvP);
+            lwm2m_tlv_free(1, tlvP);
         }
         serverInstP = serverInstP->next;
     }

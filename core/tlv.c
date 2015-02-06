@@ -500,7 +500,7 @@ int lwm2m_tlv_serialize(int size,
     return length;
 }
 
-void lwm2m_tlv_free(int size,
+static void prv_tlv_free_values(int size,
                     lwm2m_tlv_t * tlvP)
 {
     int i;
@@ -522,6 +522,23 @@ void lwm2m_tlv_free(int size,
             }
         }
     }
+
+}
+
+void lwm2m_tlv_clear_values(int size,
+                    lwm2m_tlv_t * tlvP)
+{
+    if (size == 0 || tlvP == NULL) return;
+
+    prv_tlv_free_values(size, tlvP);
+
+    memset(tlvP, 0, size * sizeof(lwm2m_tlv_t));
+}
+
+void lwm2m_tlv_free(int size,
+                    lwm2m_tlv_t * tlvP)
+{
+    prv_tlv_free_values(size, tlvP);
     lwm2m_free(tlvP);
 }
 
