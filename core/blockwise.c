@@ -182,26 +182,6 @@ void blockwise_prepare(lwm2m_blockwise_t * blockwiseP, uint32_t block_num, uint1
             more ? "more..." : "last");
 }
 
-void blockwise_append(lwm2m_blockwise_t * blockwiseP, uint32_t block_offset, coap_packet_t * response)
-{
-    size_t length = blockwiseP->length;
-    prv_blockwise_set_time(blockwiseP);
-    blockwiseP->length = block_offset + response->payload_len;
-    if (blockwiseP->length > blockwiseP->size)
-    {
-        size_t newSize = blockwiseP->size * 2;
-        uint8_t* newPayload = malloc(newSize);
-        if (NULL == newPayload)
-            return;
-        memcpy(newPayload, blockwiseP->data, length);
-        memset(newPayload + length, 0, newSize - blockwiseP->length);
-        free(blockwiseP->data);
-        blockwiseP->size = newSize;
-        blockwiseP->data = newPayload;
-    }
-    memcpy(blockwiseP->data + block_offset, response->payload, response->payload_len);
-}
-
 void blockwise_remove(lwm2m_context_t * contextP, const lwm2m_uri_t * uriP)
 {
     lwm2m_blockwise_t* current = contextP->blockwiseList;
@@ -268,6 +248,6 @@ void blockwise_free(lwm2m_context_t * contextP, uint32_t time)
     }
     if (pending || removed)
     {
-        LOG("Blockwise %lu time, %d pending, %d removed\n", time, pending, removed);
+        LOG("Blockwise %lu time, %d pending, %d removed\n", (unsigned long) time, pending, removed);
     }
 }

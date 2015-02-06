@@ -146,7 +146,6 @@ lwm2m_blockwise_t* blockwise_get(lwm2m_context_t * contextP, const lwm2m_uri_t *
 lwm2m_blockwise_t * blockwise_new(lwm2m_context_t * contextP, const lwm2m_uri_t * uriP, coap_packet_t * messageP, bool detach);
 void blockwise_prepare(lwm2m_blockwise_t * blockwiseP, uint32_t block_num, uint16_t block_size,
         coap_packet_t * response);
-void blockwise_append(lwm2m_blockwise_t * blockwiseP, uint32_t block_offset, coap_packet_t * response);
 void blockwise_remove(lwm2m_context_t * contextP, const lwm2m_uri_t * uriP);
 void blockwise_free(lwm2m_context_t * contextP, uint32_t time);
 
