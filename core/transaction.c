@@ -82,6 +82,15 @@ Contains code snippets which are:
 
 #include "internals.h"
 
+/*
+ * lwm2m_blockwise_t is only valid for a COAP server, when the uri identifies the resource.
+ * For COAP clients use large_buffer_t in the transaction!
+ */
+typedef struct {
+    uint8_t * buffer;
+    uint32_t  size;
+    uint32_t  length;
+} large_buffer_t;
 
 /*
  * Modulo mask (+1 and +0.5 for rounding) for a random number to get the tick number for the random
@@ -118,6 +127,54 @@ static int prv_check_token(lwm2m_transaction_t * transacP,
 
     return 0;
 }
+
+static void prv_append_blockwise_data(large_buffer_t * blockwiseP, uint32_t block_offset, coap_packet_t * response)
+{
+    size_t length = blockwiseP->length;
+    blockwiseP->length = block_offset + response->payload_len;
+    if (blockwiseP->length > blockwiseP->size)
+    {
+        size_t newSize = blockwiseP->size * 2;
+        uint8_t* newPayload = lwm2m_malloc(newSize);
+        if (NULL == newPayload)
+            return;
+        memcpy(newPayload, blockwiseP->buffer, length);
+        memset(newPayload + length, 0, newSize - blockwiseP->length);
+        lwm2m_free(blockwiseP->buffer);
+        blockwiseP->size = newSize;
+        blockwiseP->buffer = newPayload;
+    }
+    memcpy(blockwiseP->buffer + block_offset, response->payload, response->payload_len);
+    LOG("Blockwise: append %u bytes (at %u, %u bytes overall)\n",response->payload_len, block_offset, blockwiseP->length);
+}
+
+static large_buffer_t * prv_new_blockwise_data(coap_packet_t * response)
+{
+    LOG("Blockwise: new transfer\n");
+    large_buffer_t * result = lwm2m_malloc(sizeof(large_buffer_t));
+    if (NULL == result) return NULL;
+    result->size = response->payload_len * 4;
+    result->length = 0;
+    result->buffer = lwm2m_malloc(response->payload_len * 4);
+    prv_append_blockwise_data(result, 0, response);
+    return result;
+}
+
+static void prv_free_blockwise_data(large_buffer_t * blockwiseP)
+{
+    lwm2m_free(blockwiseP->buffer);
+    lwm2m_free(blockwiseP);
+}
+
+static void prv_transaction_reset(lwm2m_transaction_t * transacP)
+{
+    lwm2m_free(transacP->buffer);
+    transacP->buffer = NULL;
+    transacP->ack_received = 0;
+    transacP->mID = ((coap_packet_t*) transacP->message)->mid;
+    transacP->retrans_counter = 0;
+}
+
 
 lwm2m_transaction_t * transaction_new(coap_method_t method,
                                       lwm2m_uri_t * uriP,
@@ -205,6 +262,9 @@ void transaction_free(lwm2m_transaction_t * transacP)
         lwm2m_free(transacP->message);
     }
     if (transacP->buffer) lwm2m_free(transacP->buffer);
+    if (transacP->blockwise) {
+        prv_free_blockwise_data(transacP->blockwise);
+    }
     lwm2m_free(transacP);
 }
 
@@ -290,40 +350,35 @@ void transaction_handle_response(lwm2m_context_t * contextP,
                 void* messageData = message->payload;
                 size_t messageDataLength =  message->payload_len;
 
-                if (false && IS_OPTION(message, COAP_OPTION_BLOCK2)) {
+                if (IS_OPTION(message, COAP_OPTION_BLOCK2)) {
                     uint8_t more = 0;
                     uint32_t block_num = 0;
                     uint32_t block_offset = 0;
                     uint16_t block_size = REST_MAX_CHUNK_SIZE;
-                    lwm2m_blockwise_t * blockwiseP = NULL;
-                    lwm2m_uri_t * uriP = NULL;
+                    large_buffer_t * blockwiseP = (large_buffer_t *) transacP->blockwise;
                     coap_packet_t* transRequest = (coap_packet_t*) transacP->message;
 
                     coap_get_header_block2(message, &block_num, &more, &block_size, &block_offset);
-                        LOG("Blockwise: block response %u (%u/%u) %s @ %u bytes\n", block_num, block_size, REST_MAX_CHUNK_SIZE,
+                    LOG("Blockwise: block response %u (%u/%u) %s @ %u bytes\n", block_num, block_size, REST_MAX_CHUNK_SIZE,
                                 more ? "more..." : "last", block_offset);
                     block_size = MIN(block_size, REST_MAX_CHUNK_SIZE);
 
-                    uriP = lwm2m_decode_uri(transRequest->uri_path);
-                    blockwiseP = blockwise_get(contextP, uriP);
                     if (NULL == blockwiseP) {
-                        blockwiseP = blockwise_new(contextP, uriP, message, true);
+                        blockwiseP = prv_new_blockwise_data(message);
+                        transacP->blockwise = blockwiseP;
                     }
                     else {
-                        blockwise_append(blockwiseP, block_offset, message);
+                        prv_append_blockwise_data(blockwiseP, block_offset, message);
                     }
                     if (more) {
-                        free(transacP->buffer);
-                        transacP->buffer = NULL;
-                        transRequest->type = COAP_TYPE_CON;
-                        transRequest->code = COAP_GET;
                         transRequest->mid = contextP->nextMID++;
                         transRequest->payload_len = 0;
                         coap_set_header_block2(transRequest, block_num + 1, 1, block_size);
+                        prv_transaction_reset(transacP);
                         transaction_send(contextP, transacP);
                         return;
                     }
-                    message->payload = blockwiseP->data;
+                    message->payload = blockwiseP->buffer;
                     message->payload_len = blockwiseP->length;
                 }
                 if (transacP->callback != NULL)

@@ -478,6 +478,7 @@ struct _lwm2m_transaction_
     void *                message;
     uint16_t              buffer_len;
     uint8_t *             buffer;
+    void *                blockwise;
     lwm2m_transaction_callback_t callback;
     void *                userData;
 };
