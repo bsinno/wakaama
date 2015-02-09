@@ -384,6 +384,7 @@ typedef struct _lwm2m_server_
     lwm2m_status_t    status;
     lwm2m_request_t   request;
     char *            location;
+    uint16_t          blocksize;
     lwm2m_attribute_data_t * attributeData; /**< list of attribute data */
 } lwm2m_server_t;
 
@@ -476,8 +477,9 @@ struct _lwm2m_transaction_
     uint8_t               token_len; // token length, if transaction should wait for response
     uint8_t               token[LWM2M_TOKEN_MAX_LEN]; // token
     void *                message;
-    uint16_t              buffer_len;
+    uint32_t              buffer_len;
     uint8_t *             buffer;
+    uint16_t              blocksize;
     void *                blockwise;
     lwm2m_transaction_callback_t callback;
     void *                userData;

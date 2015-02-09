@@ -726,6 +726,7 @@ int object_getServers(lwm2m_context_t * contextP)
                 return -1;
             }
             targetP->request = REQUEST_REG_REGISTER;
+            targetP->blocksize = REST_MAX_CHUNK_SIZE;
             contextP->serverList = (lwm2m_server_t*)LWM2M_LIST_ADD(contextP->serverList, targetP);
         }
         lwm2m_free(tlvP);
