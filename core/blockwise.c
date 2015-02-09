@@ -118,23 +118,19 @@ bool detach)
         return NULL;
     memset(result, 0, sizeof(lwm2m_blockwise_t));
 
+    result->length = responseP->payload_len;
     if (detach)
     {
-        result->size = REST_MAX_CHUNK_SIZE * 4;
-        result->data = malloc(result->size);
+        result->data = malloc(result->length);
         if (NULL == result->data)
         {
             free(result);
             return NULL;
         }
-        result->length = responseP->payload_len;
         memcpy(result->data, responseP->payload, result->length);
-        memset(result->data + result->length, 0, result->size - result->length);
     }
     else
     {
-        result->size = responseP->payload_len;
-        result->length = responseP->payload_len;
         result->data = responseP->payload;
     }
 

@@ -106,7 +106,6 @@ struct _lwm2m_blockwise_
     uint32_t time;
     uint8_t etag_len;
     uint8_t etag[COAP_ETAG_LEN];
-    uint16_t size;
     uint16_t length;
     uint8_t* data;
 };
