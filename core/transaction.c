@@ -148,14 +148,14 @@ static void prv_append_blockwise_data(large_buffer_t * blockwiseP, uint32_t bloc
     LOG("Blockwise: append %u bytes (at %u, %u bytes overall)\n",response->payload_len, block_offset, blockwiseP->length);
 }
 
-static large_buffer_t * prv_new_blockwise_data(coap_packet_t * response)
+static large_buffer_t * prv_new_blockwise_data(coap_packet_t * response, uint32_t size)
 {
     LOG("Blockwise: new transfer\n");
     large_buffer_t * result = lwm2m_malloc(sizeof(large_buffer_t));
     if (NULL == result) return NULL;
-    result->size = response->payload_len * 4;
+    result->size = (0 < size) ? size : response->payload_len * 4;
     result->length = 0;
-    result->buffer = lwm2m_malloc(response->payload_len * 4);
+    result->buffer = lwm2m_malloc(result->size);
     prv_append_blockwise_data(result, 0, response);
     return result;
 }
@@ -352,19 +352,21 @@ void transaction_handle_response(lwm2m_context_t * contextP,
 
                 if (IS_OPTION(message, COAP_OPTION_BLOCK2)) {
                     uint8_t more = 0;
+                    uint32_t resource_size = 0;
                     uint32_t block_num = 0;
                     uint32_t block_offset = 0;
                     uint16_t block_size = REST_MAX_CHUNK_SIZE;
                     large_buffer_t * blockwiseP = (large_buffer_t *) transacP->blockwise;
                     coap_packet_t* transRequest = (coap_packet_t*) transacP->message;
 
+                    coap_get_header_size2(message, &resource_size);
                     coap_get_header_block2(message, &block_num, &more, &block_size, &block_offset);
                     LOG("Blockwise: block response %u (%u/%u) %s @ %u bytes\n", block_num, block_size, REST_MAX_CHUNK_SIZE,
                                 more ? "more..." : "last", block_offset);
                     block_size = MIN(block_size, REST_MAX_CHUNK_SIZE);
 
                     if (NULL == blockwiseP) {
-                        blockwiseP = prv_new_blockwise_data(message);
+                        blockwiseP = prv_new_blockwise_data(message, resource_size);
                         transacP->blockwise = blockwiseP;
                     }
                     else {

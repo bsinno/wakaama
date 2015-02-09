@@ -163,6 +163,10 @@ void blockwise_prepare(lwm2m_blockwise_t * blockwiseP, uint32_t block_num, uint1
     uint32_t block_offset = block_num * block_size;
     int packet_payload_length = MIN(blockwiseP->length - block_offset, block_size);
     int more = block_offset + packet_payload_length < blockwiseP->length;
+    if (0 == block_num)
+    {
+        coap_set_header_size2(response, blockwiseP->length);
+    }
     coap_set_header_block2(response, block_num, more, block_size);
     if (0 < blockwiseP->etag_len)
     {
