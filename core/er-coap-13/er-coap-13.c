@@ -470,8 +470,9 @@ coap_serialize_message(void *packet, uint8_t *buffer)
   COAP_SERIALIZE_STRING_OPTION( COAP_OPTION_LOCATION_QUERY, location_query, '&', "Location-Query")
   COAP_SERIALIZE_BLOCK_OPTION(  COAP_OPTION_BLOCK2,         block2, "Block2")
   COAP_SERIALIZE_BLOCK_OPTION(  COAP_OPTION_BLOCK1,         block1, "Block1")
-  COAP_SERIALIZE_INT_OPTION(    COAP_OPTION_SIZE,           size, "Size")
+  COAP_SERIALIZE_INT_OPTION(    COAP_OPTION_SIZE2,           size2, "Size2")
   COAP_SERIALIZE_STRING_OPTION( COAP_OPTION_PROXY_URI,      proxy_uri, '\0', "Proxy-Uri")
+  COAP_SERIALIZE_INT_OPTION(    COAP_OPTION_SIZE1,           size1, "Size1")
 
   PRINTF("-Done serializing at %p----\n", option);
 
@@ -722,9 +723,13 @@ coap_parse_message(void *packet, uint8_t *data, uint16_t data_len)
         coap_pkt->block1_num >>= 4;
         PRINTF("Block1 [%lu%s (%u B/blk)]\n", coap_pkt->block1_num, coap_pkt->block1_more ? "+" : "", coap_pkt->block1_size);
         break;
-      case COAP_OPTION_SIZE:
-        coap_pkt->size = coap_parse_int_option(current_option, option_length);
-        PRINTF("Size [%lu]\n", coap_pkt->size);
+      case COAP_OPTION_SIZE2:
+        coap_pkt->size2 = coap_parse_int_option(current_option, option_length);
+        PRINTF("Size2 [%lu]\n", (unsigned long)coap_pkt->size2);
+        break;
+      case COAP_OPTION_SIZE1:
+        coap_pkt->size1 = coap_parse_int_option(current_option, option_length);
+        PRINTF("Size1 [%lu]\n", (unsigned long)coap_pkt->size1);
         break;
       default:
         PRINTF("unknown (%u)\n", option_number);
@@ -1233,25 +1238,47 @@ coap_set_header_block1(void *packet, uint32_t num, uint8_t more, uint16_t size)
 }
 /*-----------------------------------------------------------------------------------*/
 int
-coap_get_header_size(void *packet, uint32_t *size)
+coap_get_header_size2(void *packet, uint32_t *size)
 {
   coap_packet_t *const coap_pkt = (coap_packet_t *) packet;
 
-  if (!IS_OPTION(coap_pkt, COAP_OPTION_SIZE)) return 0;
+  if (!IS_OPTION(coap_pkt, COAP_OPTION_SIZE2)) return 0;
   
-  *size = coap_pkt->size;
+  *size = coap_pkt->size2;
   return 1;
 }
 
 int
-coap_set_header_size(void *packet, uint32_t size)
+coap_set_header_size2(void *packet, uint32_t size)
 {
   coap_packet_t *const coap_pkt = (coap_packet_t *) packet;
 
-  coap_pkt->size = size;
-  SET_OPTION(coap_pkt, COAP_OPTION_SIZE);
+  coap_pkt->size2 = size;
+  SET_OPTION(coap_pkt, COAP_OPTION_SIZE2);
   return 1;
 }
+
+int
+coap_get_header_size1(void *packet, uint32_t *size)
+{
+  coap_packet_t *const coap_pkt = (coap_packet_t *) packet;
+
+  if (!IS_OPTION(coap_pkt, COAP_OPTION_SIZE1)) return 0;
+
+  *size = coap_pkt->size1;
+  return 1;
+}
+
+int
+coap_set_header_size1(void *packet, uint32_t size)
+{
+  coap_packet_t *const coap_pkt = (coap_packet_t *) packet;
+
+  coap_pkt->size1 = size;
+  SET_OPTION(coap_pkt, COAP_OPTION_SIZE1);
+  return 1;
+}
+
 /*-----------------------------------------------------------------------------------*/
 /*- PAYLOAD -------------------------------------------------------------------------*/
 /*-----------------------------------------------------------------------------------*/

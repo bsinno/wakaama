@@ -167,8 +167,9 @@ typedef enum {
   COAP_OPTION_LOCATION_QUERY = 20, /* 1-270 B */
   COAP_OPTION_BLOCK2 = 23,        /* 1-3 B */
   COAP_OPTION_BLOCK1 = 27,        /* 1-3 B */
-  COAP_OPTION_SIZE = 28,          /* 0-4 B */
+  COAP_OPTION_SIZE2 = 28,         /* 0-4 B */
   COAP_OPTION_PROXY_URI = 35,     /* 1-270 B */
+  COAP_OPTION_SIZE1 = 60,         /* 0-4 B */
 } coap_option_t;
 
 /* CoAP Content-Types */
@@ -243,7 +244,8 @@ typedef struct {
   uint8_t block1_more;
   uint16_t block1_size;
   uint32_t block1_offset;
-  uint32_t size;
+  uint32_t size2;
+  uint32_t size1;
   multi_option_t *uri_query;
   uint8_t if_none_match;
 
@@ -377,8 +379,11 @@ int coap_set_header_block2(void *packet, uint32_t num, uint8_t more, uint16_t si
 int coap_get_header_block1(void *packet, uint32_t *num, uint8_t *more, uint16_t *size, uint32_t *offset);
 int coap_set_header_block1(void *packet, uint32_t num, uint8_t more, uint16_t size);
 
-int coap_get_header_size(void *packet, uint32_t *size);
-int coap_set_header_size(void *packet, uint32_t size);
+int coap_get_header_size2(void *packet, uint32_t *size);
+int coap_set_header_size2(void *packet, uint32_t size);
+
+int coap_get_header_size1(void *packet, uint32_t *size);
+int coap_set_header_size1(void *packet, uint32_t size);
 
 int coap_get_payload(void *packet, const uint8_t **payload);
 int coap_set_payload(void *packet, const void *payload, size_t length);
