@@ -438,6 +438,7 @@ typedef struct _lwm2m_client_
     char *                  msisdn;
     uint32_t                lifetime;
     time_t                  endOfLife;
+    uint16_t                blocksize;
     void *                  sessionH;
     lwm2m_client_object_t * objectList;
     lwm2m_observation_t *   observationList;

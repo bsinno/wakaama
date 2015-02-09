@@ -835,6 +835,7 @@ coap_status_t handle_registration_request(lwm2m_context_t * contextP,
         clientP->endOfLife = tv.tv_sec + lifetime;
         clientP->objectList = objects;
         clientP->sessionH = fromSessionH;
+        clientP->blocksize = REST_MAX_CHUNK_SIZE;
 
         if (prv_getLocationString(clientP->internalID, location) == 0)
         {

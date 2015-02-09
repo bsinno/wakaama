@@ -201,6 +201,21 @@ lwm2m_transaction_t * transaction_new(coap_method_t method,
     transacP->peerType = peerType;
     transacP->peerP = peerP;
 
+    switch(transacP->peerType)
+    {
+    case ENDPOINT_CLIENT:
+        transacP->blocksize = ((lwm2m_client_t*)peerP)->blocksize;
+        break;
+
+    case ENDPOINT_SERVER:
+        transacP->blocksize = ((lwm2m_server_t*)peerP)->blocksize;
+        break;
+
+    default:
+        transacP->blocksize = REST_MAX_CHUNK_SIZE;
+        break;
+    }
+
     if (NULL != uriP)
     {
         result = snprintf(transacP->objStringID, LWM2M_STRING_ID_MAX_LEN, "%hu", uriP->objectId);
@@ -420,8 +435,15 @@ int transaction_send(lwm2m_context_t * contextP,
     {
         uint8_t tempBuffer[LWM2M_MAX_PACKET_SIZE];
         int length;
+        uint16_t block_size = transacP->blocksize;
+        coap_packet_t* message = (coap_packet_t*) transacP->message;
 
-        length = coap_serialize_message(transacP->message, tempBuffer);
+        if (block_size < message->payload_len) {
+            transacP->blockwise = prv_new_blockwise_data(message, message->payload_len);
+
+        }
+
+        length = coap_serialize_message(message, tempBuffer);
         if (length <= 0) return COAP_500_INTERNAL_SERVER_ERROR;
 
         transacP->buffer = (uint8_t*)lwm2m_malloc(length);
