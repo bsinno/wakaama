@@ -192,7 +192,7 @@ void lwm2m_handle_packet(lwm2m_context_t * contextP,
                 // check for pending blockwise transfer
                 if (message->code == COAP_GET && !IS_OPTION(message, COAP_OPTION_OBSERVE))
                 {
-                    blockwiseP = blockwise_get(contextP, uriP);
+                    blockwiseP = blockwise_get(contextP, message->code, uriP);
                 }
                 if (NULL == blockwiseP)
                 {
@@ -200,7 +200,7 @@ void lwm2m_handle_packet(lwm2m_context_t * contextP,
                     payload = response->payload;
                     if (coap_error_code < BAD_REQUEST_4_00 && block_size < response->payload_len)
                     {
-                        blockwiseP = blockwise_new(contextP, uriP, response, false);
+                        blockwiseP = blockwise_new(contextP, message->code, uriP, response, false);
                         if (NULL != blockwiseP)
                         {
                             // hand over payload to blockwise, freed with end of blockwise

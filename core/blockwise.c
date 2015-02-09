@@ -94,12 +94,12 @@ static void prv_blockwise_etag(lwm2m_blockwise_t* current)
 }
 #endif
 
-lwm2m_blockwise_t* blockwise_get(lwm2m_context_t * contextP, const lwm2m_uri_t * uriP)
+lwm2m_blockwise_t* blockwise_get(lwm2m_context_t * contextP, coap_method_t method, const lwm2m_uri_t * uriP)
 {
     lwm2m_blockwise_t* current = contextP->blockwiseList;
     while (NULL != current)
     {
-        if (0 == prv_blockwise_compare_uri(&current->uri, uriP))
+        if ((current->method == method) && (0 == prv_blockwise_compare_uri(&current->uri, uriP)))
         {
             LOG("Found blockwise %d bytes for %d/%d/%d\n", current->length, current->uri.objectId,
                     current->uri.instanceId, current->uri.resourceId);
@@ -110,7 +110,7 @@ lwm2m_blockwise_t* blockwise_get(lwm2m_context_t * contextP, const lwm2m_uri_t *
     return NULL;
 }
 
-lwm2m_blockwise_t * blockwise_new(lwm2m_context_t * contextP, const lwm2m_uri_t * uriP, coap_packet_t * responseP,
+lwm2m_blockwise_t * blockwise_new(lwm2m_context_t * contextP, coap_method_t method, const lwm2m_uri_t * uriP, coap_packet_t * responseP,
 bool detach)
 {
     lwm2m_blockwise_t* result = (lwm2m_blockwise_t *) lwm2m_malloc(sizeof(lwm2m_blockwise_t));
@@ -141,6 +141,7 @@ bool detach)
     result->next = contextP->blockwiseList;
     contextP->blockwiseList = result;
 
+    result->method = method;
     result->uri = *uriP;
     result->etag_len = responseP->etag_len;
     if (0 < result->etag_len)

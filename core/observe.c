@@ -297,7 +297,7 @@ coap_status_t lwm2m_sendNotification(lwm2m_context_t * contextP, lwm2m_watcher_t
     {
         if (NULL == data->blockwiseP)
         {
-            data->blockwiseP = blockwise_new(contextP, uriP, &message, false);
+            data->blockwiseP = blockwise_new(contextP, COAP_GET, uriP, &message, false);
         }
         blockwise_prepare(data->blockwiseP, 0, watcherP->blockSize, &message);
     }
