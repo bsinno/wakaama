@@ -77,14 +77,19 @@ void lwm2m_free(void *p);
 #define COAP_202_DELETED                (uint8_t)0x42
 #define COAP_204_CHANGED                (uint8_t)0x44
 #define COAP_205_CONTENT                (uint8_t)0x45
+#define COAP_231_CONTINUE               (uint8_t)0x5F
 #define COAP_400_BAD_REQUEST            (uint8_t)0x80
 #define COAP_401_UNAUTHORIZED           (uint8_t)0x81
+#define COAP_402_BAD_OPTION             (uint8_t)0x82
 #define COAP_404_NOT_FOUND              (uint8_t)0x84
 #define COAP_405_METHOD_NOT_ALLOWED     (uint8_t)0x85
 #define COAP_406_NOT_ACCEPTABLE         (uint8_t)0x86
+#define COAP_408_ENTITY_INCOMPLETE      (uint8_t)0x88
+#define COAP_413_ENTITY_TOO_LARGE       (uint8_t)0x8D
 #define COAP_500_INTERNAL_SERVER_ERROR  (uint8_t)0xA0
 #define COAP_501_NOT_IMPLEMENTED        (uint8_t)0xA1
 #define COAP_503_SERVICE_UNAVAILABLE    (uint8_t)0xA3
+#define COAP_505_PROXYING_NOT_SUPPORTED (uint8_t)0xA5
 
 /*
  * Standard Object IDs
@@ -298,6 +303,12 @@ typedef enum
 
 typedef struct _lwm2m_object_t lwm2m_object_t;
 
+/**
+ * Buffers for blockwise transfer.
+ */
+typedef struct _lwm2m_blockwise_ lwm2m_blockwise_t;
+typedef struct _large_buffer_ large_buffer_t;
+
 /*
  * LWM2M Servers
  *
@@ -367,9 +378,11 @@ typedef struct _lwm2m_server_
 {
     struct _lwm2m_server_ * next;   // matches lwm2m_list_t::next
     uint16_t          shortID;      // matches lwm2m_list_t::id
-    union {
+    union
+    {
         uint16_t          changes;      // changed values
-        struct {
+        struct
+        {
             uint16_t      lifetimeChanged:1;
             uint16_t      bindingChanged:1;
         };
@@ -481,7 +494,7 @@ struct _lwm2m_transaction_
     uint32_t              buffer_len;
     uint8_t *             buffer;
     uint16_t              blocksize;
-    void *                blockwise;
+    large_buffer_t*       blockwise;
     lwm2m_transaction_callback_t callback;
     void *                userData;
 };
@@ -508,13 +521,6 @@ typedef struct _lwm2m_observed_
     lwm2m_uri_t uri;
     lwm2m_watcher_t * watcherList;
 } lwm2m_observed_t;
-
-
-/**
- * resource for blockwise transfer
- */
-typedef struct _lwm2m_blockwise_ lwm2m_blockwise_t;
-
 
 
 /*
