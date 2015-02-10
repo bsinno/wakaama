@@ -83,16 +83,6 @@ Contains code snippets which are:
 #include "internals.h"
 
 /*
- * lwm2m_blockwise_t is only valid for a COAP server, when the uri identifies the resource.
- * For COAP clients use large_buffer_t in the transaction!
- */
-typedef struct {
-    uint8_t * buffer;
-    uint32_t  size;
-    uint32_t  length;
-} large_buffer_t;
-
-/*
  * Modulo mask (+1 and +0.5 for rounding) for a random number to get the tick number for the random
  * retransmission time between COAP_RESPONSE_TIMEOUT and COAP_RESPONSE_TIMEOUT*COAP_RESPONSE_RANDOM_FACTOR.
  */
@@ -128,44 +118,6 @@ static int prv_check_token(lwm2m_transaction_t * transacP,
     return 0;
 }
 
-static void prv_append_blockwise_data(large_buffer_t * blockwiseP, uint32_t block_offset, coap_packet_t * response)
-{
-    size_t length = blockwiseP->length;
-    blockwiseP->length = block_offset + response->payload_len;
-    if (blockwiseP->length > blockwiseP->size)
-    {
-        size_t newSize = blockwiseP->size * 2;
-        uint8_t* newPayload = lwm2m_malloc(newSize);
-        if (NULL == newPayload)
-            return;
-        memcpy(newPayload, blockwiseP->buffer, length);
-        memset(newPayload + length, 0, newSize - blockwiseP->length);
-        lwm2m_free(blockwiseP->buffer);
-        blockwiseP->size = newSize;
-        blockwiseP->buffer = newPayload;
-    }
-    memcpy(blockwiseP->buffer + block_offset, response->payload, response->payload_len);
-    LOG("Blockwise: append %u bytes (at %u, %u bytes overall)\n",response->payload_len, block_offset, blockwiseP->length);
-}
-
-static large_buffer_t * prv_new_blockwise_data(coap_packet_t * response, uint32_t size)
-{
-    LOG("Blockwise: new transfer\n");
-    large_buffer_t * result = lwm2m_malloc(sizeof(large_buffer_t));
-    if (NULL == result) return NULL;
-    result->size = (0 < size) ? size : response->payload_len * 4;
-    result->length = 0;
-    result->buffer = lwm2m_malloc(result->size);
-    prv_append_blockwise_data(result, 0, response);
-    return result;
-}
-
-static void prv_free_blockwise_data(large_buffer_t * blockwiseP)
-{
-    lwm2m_free(blockwiseP->buffer);
-    lwm2m_free(blockwiseP);
-}
-
 static void prv_transaction_reset(lwm2m_transaction_t * transacP)
 {
     lwm2m_free(transacP->buffer);
@@ -174,7 +126,6 @@ static void prv_transaction_reset(lwm2m_transaction_t * transacP)
     transacP->mID = ((coap_packet_t*) transacP->message)->mid;
     transacP->retrans_counter = 0;
 }
-
 
 lwm2m_transaction_t * transaction_new(coap_method_t method,
                                       lwm2m_uri_t * uriP,
@@ -276,9 +227,11 @@ void transaction_free(lwm2m_transaction_t * transacP)
         coap_free_header(transacP->message);
         lwm2m_free(transacP->message);
     }
-    if (transacP->buffer) lwm2m_free(transacP->buffer);
+    if (transacP->buffer) {
+        lwm2m_free(transacP->buffer);
+    }
     if (transacP->blockwise) {
-        prv_free_blockwise_data(transacP->blockwise);
+        blockwise_free_large_buffer(transacP->blockwise);
     }
     lwm2m_free(transacP);
 }
@@ -349,10 +302,38 @@ void transaction_handle_response(lwm2m_context_t * contextP,
                 {
                     found = true;
                     transacP->ack_received = true;
+                    if (IS_OPTION(message, COAP_OPTION_BLOCK1)) {
+                        uint8_t more = 0;
+                        uint32_t block_num = 0;
+                        uint32_t block_offset = 0;
+                        uint16_t block_size = REST_MAX_CHUNK_SIZE;
+                        coap_get_header_block1(message, &block_num, &more, &block_size, &block_offset);
+                        if (more) {
+                            coap_packet_t* transRequest = (coap_packet_t*) transacP->message;
+                            large_buffer_t * blockwiseP = transacP->blockwise;
+                            transRequest->mid = contextP->nextMID++;
+                            block_offset += block_size;
+                            more = block_offset + block_size < blockwiseP->length;
+                            RESET_OPTION(transRequest, COAP_OPTION_SIZE1);
+                            coap_set_header_block1(transRequest, block_num + 1, more, block_size);
+                            if (!more) {
+                                block_size = blockwiseP->length - block_offset;
+                            }
+                            coap_set_payload(transRequest, blockwiseP->buffer + block_offset, block_size);
+                            prv_transaction_reset(transacP);
+                            transaction_send(contextP, transacP);
+                            return;
+                        }
+                    }
                 }
             }
+
             if (transacP->ack_received && prv_check_token(transacP, message))
             {
+                // save original payload
+                void* messageData = message->payload;
+                size_t messageDataLength =  message->payload_len;
+
                 // HACK: If a message is sent from the monitor callback,
                 // it will arrive before the registration ACK.
                 // So we resend transaction that were denied for authentication reason.
@@ -362,8 +343,6 @@ void transaction_handle_response(lwm2m_context_t * contextP,
                     transacP->retrans_time += COAP_RESPONSE_TIMEOUT;
                     return;
                 }
-                void* messageData = message->payload;
-                size_t messageDataLength =  message->payload_len;
 
                 if (IS_OPTION(message, COAP_OPTION_BLOCK2)) {
                     uint8_t more = 0;
@@ -373,6 +352,7 @@ void transaction_handle_response(lwm2m_context_t * contextP,
                     uint16_t block_size = REST_MAX_CHUNK_SIZE;
                     large_buffer_t * blockwiseP = (large_buffer_t *) transacP->blockwise;
                     coap_packet_t* transRequest = (coap_packet_t*) transacP->message;
+                    coap_status_t code = transRequest->code;
 
                     coap_get_header_size2(message, &resource_size);
                     coap_get_header_block2(message, &block_num, &more, &block_size, &block_offset);
@@ -381,30 +361,48 @@ void transaction_handle_response(lwm2m_context_t * contextP,
                     block_size = MIN(block_size, REST_MAX_CHUNK_SIZE);
 
                     if (NULL == blockwiseP) {
-                        blockwiseP = prv_new_blockwise_data(message, resource_size);
-                        transacP->blockwise = blockwiseP;
+                        blockwiseP = blockwise_new_large_buffer(message, resource_size);
+                        if (NULL == blockwiseP) {
+                            code = COAP_500_INTERNAL_SERVER_ERROR;
+                        }
+                        else {
+                            transacP->blockwise = blockwiseP;
+                        }
                     }
                     else {
-                        prv_append_blockwise_data(blockwiseP, block_offset, message);
+                        code = blockwise_append_large_buffer(blockwiseP, block_offset, message);
                     }
                     if (more) {
-                        transRequest->mid = contextP->nextMID++;
-                        transRequest->payload_len = 0;
-                        coap_set_header_block2(transRequest, block_num + 1, 1, block_size);
-                        prv_transaction_reset(transacP);
-                        transaction_send(contextP, transacP);
-                        return;
+                        if (code < COAP_400_BAD_REQUEST) {
+                            // request next block
+                            transRequest->mid = contextP->nextMID++;
+                            transRequest->payload_len = 0;
+                            coap_set_header_block2(transRequest, block_num + 1, 1, block_size);
+                            prv_transaction_reset(transacP);
+                            transaction_send(contextP, transacP);
+                            return;
+                        }
+                        else {
+                            // out of memory, report error with NULL
+                            message = NULL;
+                        }
                     }
-                    message->payload = blockwiseP->buffer;
-                    message->payload_len = blockwiseP->length;
+                    else {
+                        // set accumulated payload for callback
+                        message->payload = blockwiseP->buffer;
+                        message->payload_len = blockwiseP->length;
+                    }
                 }
                 if (transacP->callback != NULL)
                 {
                     transacP->callback(transacP, message);
                 }
                 transaction_remove(contextP, transacP);
-                message->payload = messageData;
-                message->payload_len = messageDataLength;
+                if (NULL != message) {
+                    // restore old payload
+                    message->payload = messageData;
+                    message->payload_len = messageDataLength;
+                }
                 return;
             }
             // if we found our guy, exit
@@ -439,8 +437,17 @@ int transaction_send(lwm2m_context_t * contextP,
         coap_packet_t* message = (coap_packet_t*) transacP->message;
 
         if (block_size < message->payload_len) {
-            transacP->blockwise = prv_new_blockwise_data(message, message->payload_len);
-
+            if (NULL == transacP->blockwise) {
+                transacP->blockwise = blockwise_new_large_buffer(message, message->payload_len);
+                if (NULL == transacP->blockwise) {
+                    return COAP_500_INTERNAL_SERVER_ERROR;
+                }
+                else {
+                    coap_set_header_block1(message, 0, 1, block_size);
+                    coap_set_header_size1(message, message->payload_len);
+                    coap_set_payload(message, message->payload, block_size);
+                }
+            }
         }
 
         length = coap_serialize_message(message, tempBuffer);

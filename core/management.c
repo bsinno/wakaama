@@ -51,14 +51,13 @@
 
 
 #ifdef LWM2M_CLIENT_MODE
-coap_status_t handle_dm_request(lwm2m_context_t * contextP,
+struct _handle_result_ handle_dm_request(lwm2m_context_t * contextP,
                                 lwm2m_uri_t * uriP,
                                 void * fromSessionH,
                                 coap_packet_t * message,
-                                coap_packet_t * response,
-                                bool* notify_change)
+                                coap_packet_t * response)
 {
-    coap_status_t result;
+    struct _handle_result_ result = { .responseCode = NO_ERROR, .flags = 0};
 
     switch (message->code)
     {
@@ -67,15 +66,16 @@ coap_status_t handle_dm_request(lwm2m_context_t * contextP,
             char * buffer = NULL;
             int length = 0;
 
-            result = object_read(contextP, uriP, &buffer, &length);
+            result.responseCode = object_read(contextP, uriP, &buffer, &length);
             /* always set buffer as payload to omit memory leaks! */
             coap_set_payload(response, buffer, length);
+            result.freePayload = 1;
             // lwm2m_handle_packet will free buffer
-            if (result == COAP_205_CONTENT)
+            if (result.responseCode == COAP_205_CONTENT)
             {
                 if (IS_OPTION(message, COAP_OPTION_OBSERVE))
                 {
-                    result = handle_observe_request(contextP, uriP, fromSessionH, message, response);
+                    result.responseCode = handle_observe_request(contextP, uriP, fromSessionH, message, response);
                 }
             }
         }
@@ -84,21 +84,21 @@ coap_status_t handle_dm_request(lwm2m_context_t * contextP,
         {
             if (!LWM2M_URI_IS_SET_INSTANCE(uriP))
             {
-                result = object_create(contextP, uriP, (char*) message->payload, message->payload_len);
-                if (result == COAP_201_CREATED)
+                result.responseCode = object_create(contextP, uriP, (char*) message->payload, message->payload_len);
+                if (result.responseCode == COAP_201_CREATED)
                 {
                     //longest uri is /65535/65535 = 12 + 1 (null) chars
                     char location_path[13] = "";
                     //instanceId expected
                     if ((uriP->flag & LWM2M_URI_FLAG_INSTANCE_ID) == 0)
                     {
-                        result = COAP_500_INTERNAL_SERVER_ERROR;
+                        result.responseCode = COAP_500_INTERNAL_SERVER_ERROR;
                         break;
                     }
 
                     if (sprintf(location_path, "/%d/%d", uriP->objectId, uriP->instanceId) < 0)
                     {
-                        result = COAP_500_INTERNAL_SERVER_ERROR;
+                        result.responseCode = COAP_500_INTERNAL_SERVER_ERROR;
                         break;
                     }
                     coap_set_header_location_path(response, location_path);
@@ -108,20 +108,24 @@ coap_status_t handle_dm_request(lwm2m_context_t * contextP,
             {
                 if (object_isInstanceNew(contextP, uriP->objectId, uriP->instanceId))
                 {
-                    result = object_create(contextP, uriP, (char*) message->payload, message->payload_len);
+                    result.responseCode = object_create(contextP, uriP, (char*) message->payload, message->payload_len);
+                    if (COAP_204_CHANGED == result.responseCode)
+                    {
+                        result.valueChanged = 1;
+                    }
                 }
                 else
                 {
-                    result = object_write(contextP, uriP, (char*)message->payload, message->payload_len);
-                    if (COAP_204_CHANGED == result && NULL != notify_change)
+                    result.responseCode = object_write(contextP, uriP, (char*)message->payload, message->payload_len);
+                    if (COAP_204_CHANGED == result.responseCode)
                     {
-                        *notify_change = true;
+                        result.valueChanged = 1;
                     }
                 }
             }
             else
             {
-                result = object_execute(contextP, uriP, (char*)message->payload, message->payload_len);
+                result.responseCode = object_execute(contextP, uriP, (char*)message->payload, message->payload_len);
             }
         }
         break;
@@ -130,18 +134,18 @@ coap_status_t handle_dm_request(lwm2m_context_t * contextP,
             if(message->payload != NULL) {
               if (LWM2M_URI_IS_SET_INSTANCE(uriP))
               {
-                result = object_write(contextP, uriP, (char *)message->payload, message->payload_len);
-                if (COAP_204_CHANGED == result && NULL != notify_change)
+                result.responseCode = object_write(contextP, uriP, (char *)message->payload, message->payload_len);
+                if (COAP_204_CHANGED == result.responseCode)
                 {
-                    *notify_change = true;
+                    result.valueChanged = 1;
                 }
               }
             }
             else if(message->uri_query != NULL) {
-              result = object_attrib(contextP, uriP, message->uri_query, fromSessionH);
+                result.responseCode = object_attrib(contextP, uriP, message->uri_query, fromSessionH);
             }
             else {
-                result = COAP_400_BAD_REQUEST;
+                result.responseCode = COAP_400_BAD_REQUEST;
             }
         }
         break;
@@ -149,16 +153,16 @@ coap_status_t handle_dm_request(lwm2m_context_t * contextP,
         {
             if (LWM2M_URI_IS_SET_INSTANCE(uriP) && !LWM2M_URI_IS_SET_RESOURCE(uriP))
             {
-                result = object_delete(contextP, uriP);
+                result.responseCode = object_delete(contextP, uriP);
             }
             else
             {
-                result = BAD_REQUEST_4_00;
+                result.responseCode = BAD_REQUEST_4_00;
             }
         }
         break;
     default:
-        result = BAD_REQUEST_4_00;
+        result.responseCode = BAD_REQUEST_4_00;
         break;
     }
 

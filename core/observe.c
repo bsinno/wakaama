@@ -297,7 +297,7 @@ coap_status_t lwm2m_sendNotification(lwm2m_context_t * contextP, lwm2m_watcher_t
     {
         if (NULL == data->blockwiseP)
         {
-            data->blockwiseP = blockwise_new(contextP, COAP_GET, uriP, &message, false);
+            data->blockwiseP = blockwise_new(contextP, NULL, COAP_GET, uriP, &message, false, 0);
         }
         blockwise_prepare(data->blockwiseP, 0, watcherP->blockSize, &message);
     }
@@ -370,7 +370,7 @@ void lwm2m_resource_value_changed(lwm2m_context_t * contextP,
         coap_status_t result;
 
         memset(&data, 0, sizeof(data));
-        blockwise_remove(contextP, &(listP->item->uri));
+        blockwise_remove(contextP, &(listP->item->uri), NULL);
 
         result = object_read(contextP, &(listP->item->uri), &(data.buffer), &(data.length));
         if (result == COAP_205_CONTENT)
