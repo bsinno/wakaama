@@ -223,14 +223,19 @@ const char* lwm2m_statusToString(int status)
     CODE_TO_STRING(COAP_202_DELETED);
     CODE_TO_STRING(COAP_204_CHANGED);
     CODE_TO_STRING(COAP_205_CONTENT);
+    CODE_TO_STRING(COAP_231_CONTINUE);
     CODE_TO_STRING(COAP_400_BAD_REQUEST);
     CODE_TO_STRING(COAP_401_UNAUTHORIZED);
+    CODE_TO_STRING(COAP_402_BAD_OPTION);
     CODE_TO_STRING(COAP_404_NOT_FOUND);
     CODE_TO_STRING(COAP_405_METHOD_NOT_ALLOWED);
     CODE_TO_STRING(COAP_406_NOT_ACCEPTABLE);
+    CODE_TO_STRING(COAP_408_ENTITY_INCOMPLETE);
+    CODE_TO_STRING(COAP_413_ENTITY_TOO_LARGE);
     CODE_TO_STRING(COAP_500_INTERNAL_SERVER_ERROR);
     CODE_TO_STRING(COAP_501_NOT_IMPLEMENTED);
     CODE_TO_STRING(COAP_503_SERVICE_UNAVAILABLE);
+    CODE_TO_STRING(COAP_505_PROXYING_NOT_SUPPORTED);
     default: return "";
     }
 }
@@ -289,6 +294,7 @@ void lwm2m_output_buffer(FILE * stream,
 
         i += 16;
     }
+    fflush(stream);
 }
 
 #ifdef WITH_LOGS
@@ -311,6 +317,39 @@ static void prv_print_multi_option(const char* head, multi_option_t* multi) {
         multi = multi->next;
     }
 }
+
+static void prv_print_option_block(const char* head, coap_packet_t* message, int num) {
+    uint8_t  block_more = 0;
+    uint32_t block_num = 0;
+    uint16_t block_size = REST_MAX_CHUNK_SIZE;
+    uint32_t block_offset = 0;
+    int result = 0;
+    if (1 == num) {
+        result = coap_get_header_block1(message, &block_num, &block_more, &block_size, &block_offset);
+    }
+    else if (2 == num) {
+        result = coap_get_header_block2(message, &block_num, &block_more, &block_size, &block_offset);
+    }
+    if (result) {
+        fprintf(stdout, "  %s%d: %lu %u %s\n", head, num, (unsigned long)block_num, (unsigned int)block_size, block_more?"more...":"ready");
+    }
+}
+
+static void prv_print_option_size(const char* head, coap_packet_t* message, int num) {
+    uint32_t size = 0;
+    int result = 0;
+    if (1 == num) {
+        result = coap_get_header_size1(message, &size);
+    }
+    else if (2 == num) {
+        result = coap_get_header_size2(message, &size);
+    }
+    if (result) {
+        fprintf(stdout, "  %s%d: %lu\n", head, num, (unsigned long)size);
+    }
+}
+
+
 #endif
 
 void lwm2m_print_status(const char* head, coap_packet_t* message, int size)
@@ -323,6 +362,10 @@ void lwm2m_print_status(const char* head, coap_packet_t* message, int size)
     prv_print_multi_option("Query", message->uri_query);
     prv_print_multi_option("Location", message->location_path);
     prv_print_hex("ETag", message->etag_len, message->etag);
+    prv_print_option_block("Block", message, 1);
+    prv_print_option_block("Block", message, 2);
+    prv_print_option_size("Size", message, 1);
+    prv_print_option_size("Size", message, 2);
     prv_print_hex("Payload", message->payload_len, message->payload);
 #endif
 }
