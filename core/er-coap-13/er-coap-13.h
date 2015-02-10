@@ -90,6 +90,7 @@
 /* Bitmap for set options */
 enum { OPTION_MAP_SIZE = sizeof(uint8_t) * 8 };
 #define SET_OPTION(packet, opt) ((packet)->options[opt / OPTION_MAP_SIZE] |= 1 << (opt % OPTION_MAP_SIZE))
+#define RESET_OPTION(packet, opt) ((packet)->options[opt / OPTION_MAP_SIZE] &= ~(1 << (opt % OPTION_MAP_SIZE)))
 #define IS_OPTION(packet, opt) ((packet)->options[opt / OPTION_MAP_SIZE] & (1 << (opt % OPTION_MAP_SIZE)))
 
 #ifndef MIN
@@ -249,9 +250,8 @@ typedef struct {
   multi_option_t *uri_query;
   uint8_t if_none_match;
 
-  uint16_t payload_len;
+  uint32_t payload_len;
   uint8_t *payload;
-
 } coap_packet_t;
 
 /* Option format serialization*/
