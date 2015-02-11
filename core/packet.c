@@ -261,7 +261,7 @@ void lwm2m_handle_packet(lwm2m_context_t * contextP,
                 coap_set_header_token(response, message->token, message->token_len);
             }
 
-            uriP = lwm2m_decode_uri(message->uri_path);
+            uriP = uri_decode(message->uri_path);
             if (uriP == NULL) {
                 result.responseCode = BAD_REQUEST_4_00;
             }

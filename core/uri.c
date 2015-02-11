@@ -82,8 +82,56 @@ static int prv_parse_number(const char * uriString,
     return result;
 }
 
+#ifdef WITH_LOGS
+void uri_log(const char* desc, const lwm2m_uri_t * uriP)
+{
+    uint8_t flag = uriP->flag & LWM2M_URI_MASK_ID;
+    if (flag & LWM2M_URI_FLAG_RESOURCE_ID)
+        LOG("%s %u/%u/%u\n", desc, (unsigned int)uriP->objectId, (unsigned int)uriP->instanceId, (unsigned int)uriP->resourceId);
+    else if (flag & LWM2M_URI_FLAG_INSTANCE_ID)
+        LOG("%s %u/%u\n", desc, (unsigned int)uriP->objectId, (unsigned int)uriP->instanceId);
+    else if (flag & LWM2M_URI_FLAG_OBJECT_ID)
+        LOG("%s %u\n", desc, (unsigned int)uriP->objectId);
+    else
+        LOG("%s *\n", desc);
+}
+#endif
 
-int  lwm2m_get_number(const char * uriString,
+int uri_compare(const lwm2m_uri_t * uri1P, const lwm2m_uri_t * uri2P)
+{
+    uint8_t flag = uri1P->flag & LWM2M_URI_MASK_ID;
+#if 0
+    LOG_URI("Compare URI1:", uri1P);
+    LOG_URI("Compare URI2:", uri2P);
+#endif
+    if (flag != (uri2P->flag & LWM2M_URI_MASK_ID ))
+        return 1;
+    if ((flag & LWM2M_URI_FLAG_OBJECT_ID ) && (uri1P->objectId != uri2P->objectId))
+        return 2;
+    if ((flag & LWM2M_URI_FLAG_INSTANCE_ID ) && (uri1P->instanceId != uri2P->instanceId))
+        return 3;
+    if ((flag & LWM2M_URI_FLAG_RESOURCE_ID ) && (uri1P->resourceId != uri2P->resourceId))
+        return 4;
+    return 0;
+}
+
+int uri_match(const lwm2m_uri_t * uri1P, const lwm2m_uri_t * uri2P)
+{
+    uint8_t flag = uri1P->flag & uri2P->flag & LWM2M_URI_MASK_ID;
+#if 0
+    LOG_URI("Match URI1:", uri1P);
+    LOG_URI("Match URI2:", uri2P);
+#endif
+    if ((flag & LWM2M_URI_FLAG_OBJECT_ID ) && (uri1P->objectId != uri2P->objectId))
+        return 2;
+    if ((flag & LWM2M_URI_FLAG_INSTANCE_ID ) && (uri1P->instanceId != uri2P->instanceId))
+        return 3;
+    if ((flag & LWM2M_URI_FLAG_RESOURCE_ID ) && (uri1P->resourceId != uri2P->resourceId))
+        return 4;
+    return 0;
+}
+
+int  uri_get_number(const char * uriString,
                    size_t uriLength)
 {
     int index = 0;
@@ -92,7 +140,7 @@ int  lwm2m_get_number(const char * uriString,
 }
 
 
-lwm2m_uri_t * lwm2m_decode_uri(multi_option_t *uriPath)
+lwm2m_uri_t * uri_decode(multi_option_t *uriPath)
 {
     lwm2m_uri_t * uriP;
     int readNum;
@@ -121,7 +169,7 @@ lwm2m_uri_t * lwm2m_decode_uri(multi_option_t *uriPath)
         return uriP;
     }
 
-    readNum = lwm2m_get_number(uriPath->data, uriPath->len);
+    readNum = uri_get_number(uriPath->data, uriPath->len);
     if (readNum < 0 || readNum > LWM2M_MAX_ID) goto error;
     uriP->objectId = (uint16_t)readNum;
     uriP->flag |= LWM2M_URI_FLAG_OBJECT_ID;
@@ -139,7 +187,7 @@ lwm2m_uri_t * lwm2m_decode_uri(multi_option_t *uriPath)
     // Read object instance
     if (uriPath->len != 0)
     {
-        readNum = lwm2m_get_number(uriPath->data, uriPath->len);
+        readNum = uri_get_number(uriPath->data, uriPath->len);
         if (readNum < 0 || readNum >= LWM2M_MAX_ID) goto error;
         uriP->instanceId = (uint16_t)readNum;
         uriP->flag |= LWM2M_URI_FLAG_INSTANCE_ID;
@@ -154,7 +202,7 @@ lwm2m_uri_t * lwm2m_decode_uri(multi_option_t *uriPath)
         // resource ID without an instance ID is not allowed
         if ((uriP->flag & LWM2M_URI_FLAG_INSTANCE_ID) == 0) goto error;
 
-        readNum = lwm2m_get_number(uriPath->data, uriPath->len);
+        readNum = uri_get_number(uriPath->data, uriPath->len);
         if (readNum < 0 || readNum > LWM2M_MAX_ID) goto error;
         uriP->resourceId = (uint16_t)readNum;
         uriP->flag |= LWM2M_URI_FLAG_RESOURCE_ID;

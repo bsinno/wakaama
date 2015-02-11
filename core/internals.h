@@ -131,8 +131,17 @@ struct _handle_result_
 };
 
 // defined in uri.c
-int lwm2m_get_number(const char * uriString, size_t uriLength);
-lwm2m_uri_t * lwm2m_decode_uri(multi_option_t *uriPath);
+#ifdef WITH_LOGS
+void uri_log(const char* desc, const lwm2m_uri_t * uriP);
+#define LOG_URI(D, U) uri_log(D, U)
+#else
+#define LOG_URI(D, U)
+#endif
+
+int uri_compare(const lwm2m_uri_t * uri1P, const lwm2m_uri_t * uri2P);
+int uri_match(const lwm2m_uri_t * uri1P, const lwm2m_uri_t * uri2P);
+int uri_get_number(const char * uriString, size_t uriLength);
+lwm2m_uri_t * uri_decode(multi_option_t *uriPath);
 
 // defined in objects.c
 coap_status_t object_read(lwm2m_context_t * contextP, lwm2m_uri_t * uriP, char ** bufferP, int * lengthP);

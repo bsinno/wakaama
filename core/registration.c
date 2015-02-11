@@ -614,7 +614,7 @@ static int prv_getId(uint8_t * data,
 
     limit = 0;
     while (limit < length && data[limit] != '/' && data[limit] != ' ') limit++;
-    value = lwm2m_get_number((const char*)data, limit);
+    value = uri_get_number((const char*)data, limit);
     if (value < 0 || value >= LWM2M_MAX_ID) return 0;
     *objId = value;
 
@@ -625,7 +625,7 @@ static int prv_getId(uint8_t * data,
         while (end < length && data[end] != ' ') end++;
         if (end != limit)
         {
-            value = lwm2m_get_number((const char*)data + limit, end - limit);
+            value = uri_get_number((const char*)data + limit, end - limit);
             if (value >= 0 && value < LWM2M_MAX_ID)
             {
                 *instanceId = value;
