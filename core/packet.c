@@ -90,7 +90,7 @@
 #include <stdio.h>
 
 
-static void handle_reset(lwm2m_context_t * contextP,
+static void prv_handle_reset(lwm2m_context_t * contextP,
                          void * fromSessionH,
                          coap_packet_t * message)
 {
@@ -99,7 +99,7 @@ static void handle_reset(lwm2m_context_t * contextP,
 #endif
 }
 
-static struct _handle_result_ handle_request(lwm2m_context_t * contextP, void * fromSessionH,
+static struct _handle_result_ prv_handle_request(lwm2m_context_t * contextP, void * fromSessionH,
         lwm2m_uri_t * uriP, coap_packet_t * message, coap_packet_t * response)
 {
     struct _handle_result_ result = { .responseCode = NO_ERROR, .flags = 0};
@@ -265,7 +265,7 @@ void lwm2m_handle_packet(lwm2m_context_t * contextP,
                 result.responseCode = BAD_REQUEST_4_00;
             }
             else {
-                result = handle_request(contextP, fromSessionH, uriP, message, response);
+                result = prv_handle_request(contextP, fromSessionH, uriP, message, response);
             }
             if (result.responseCode < BAD_REQUEST_4_00)
             {
@@ -309,7 +309,7 @@ void lwm2m_handle_packet(lwm2m_context_t * contextP,
                 {
                     LOG("Received RST\n");
                     /* Cancel possible subscriptions. */
-                    handle_reset(contextP, fromSessionH, message);
+                    prv_handle_reset(contextP, fromSessionH, message);
                 }
                 else {
                     LOG("Received ACK\n");
