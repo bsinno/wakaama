@@ -724,7 +724,7 @@ static void prv_freeClientObjectList(lwm2m_client_object_t * objects)
     }
 }
 
-void prv_freeClient(lwm2m_client_t * clientP)
+void registration_freeClient(lwm2m_client_t * clientP)
 {
     if (clientP->name != NULL) lwm2m_free(clientP->name);
     if (clientP->msisdn != NULL) lwm2m_free(clientP->msisdn);
@@ -839,12 +839,12 @@ coap_status_t handle_registration_request(lwm2m_context_t * contextP,
 
         if (prv_getLocationString(clientP->internalID, location) == 0)
         {
-            prv_freeClient(clientP);
+            registration_freeClient(clientP);
             return COAP_500_INTERNAL_SERVER_ERROR;
         }
         if (coap_set_header_location_path(response, location) == 0)
         {
-            prv_freeClient(clientP);
+            registration_freeClient(clientP);
             return COAP_500_INTERNAL_SERVER_ERROR;
         }
 
@@ -968,7 +968,7 @@ coap_status_t handle_registration_request(lwm2m_context_t * contextP,
         {
             contextP->monitorCallback(clientP->internalID, NULL, DELETED_2_02, NULL, 0, contextP->monitorUserData);
         }
-        prv_freeClient(clientP);
+        registration_freeClient(clientP);
         result = COAP_202_DELETED;
     }
     break;

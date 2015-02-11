@@ -156,7 +156,7 @@ void lwm2m_close(lwm2m_context_t * contextP)
         clientP = contextP->clientList;
         contextP->clientList = contextP->clientList->next;
 
-        prv_freeClient(clientP);
+        registration_freeClient(clientP);
     }
 #endif
 
@@ -284,7 +284,7 @@ int lwm2m_step(lwm2m_context_t * contextP,
             {
                 contextP->monitorCallback(clientP->internalID, NULL, DELETED_2_02, NULL, 0, contextP->monitorUserData);
             }
-            prv_freeClient(clientP);
+            registration_freeClient(clientP);
         }
         else
         {
