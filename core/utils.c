@@ -13,6 +13,7 @@
  * Contributors:
  *    David Navarro, Intel Corporation - initial API and implementation
  *    Toby Jaffey - Please refer to git log
+ *    Achim Kraus, Bosch Software Innovations GmbH - Please refer to git log
  *    
  *******************************************************************************/
 

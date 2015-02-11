@@ -15,6 +15,7 @@
  *    Fabien Fleutot - Please refer to git log
  *    Simon Bernard - Please refer to git log
  *    Toby Jaffey - Please refer to git log
+ *    Achim Kraus, Bosch Software Innovations GmbH - Please refer to git log
  *    
  *******************************************************************************/
 

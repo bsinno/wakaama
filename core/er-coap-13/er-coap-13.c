@@ -36,6 +36,7 @@
  *      Matthias Kovatsch <kovatsch@inf.ethz.ch>
  * \contributors
  *    David Navarro, Intel Corporation - Adapt to usage in liblwm2m
+ *    Achim Kraus, Bosch Software Innovations GmbH - Please refer to git log
  */
 
 
