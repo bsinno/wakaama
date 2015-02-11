@@ -16,6 +16,7 @@
  *    Simon Bernard - Please refer to git log
  *    Toby Jaffey - Please refer to git log
  *    Julien Vermillard - Please refer to git log
+ *    Achim Kraus, Bosch Software Innovations GmbH - Please refer to git log
  *
  *******************************************************************************/
 
@@ -806,7 +807,7 @@ int main(int argc, char *argv[])
         }
         else if (result > 0)
         {
-            uint8_t buffer[MAX_PACKET_SIZE];
+            uint8_t buffer[MAX_PACKET_SIZE * 4];
             int numBytes;
 
             if (FD_ISSET(sock, &readfds))
@@ -859,7 +860,7 @@ int main(int argc, char *argv[])
             }
             else if (FD_ISSET(STDIN_FILENO, &readfds))
             {
-                numBytes = read(STDIN_FILENO, buffer, MAX_PACKET_SIZE - 1);
+                numBytes = read(STDIN_FILENO, buffer, sizeof(buffer) - 1);
 
                 if (numBytes > 1)
                 {

@@ -564,7 +564,7 @@ int main(int argc, char *argv[])
         }
         else if (result > 0)
         {
-            uint8_t buffer[MAX_PACKET_SIZE];
+            uint8_t buffer[MAX_PACKET_SIZE * 4];
             int numBytes;
 
             /*
@@ -631,7 +631,7 @@ int main(int argc, char *argv[])
              */
             else if (FD_ISSET(STDIN_FILENO, &readfds))
             {
-                numBytes = read(STDIN_FILENO, buffer, MAX_PACKET_SIZE - 1);
+                numBytes = read(STDIN_FILENO, buffer, sizeof(buffer) - 1);
 
                 if (numBytes > 1)
                 {
