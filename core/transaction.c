@@ -311,14 +311,15 @@ void transaction_handle_response(lwm2m_context_t * contextP,
                 // save original payload
                 void* messageData = message->payload;
                 size_t messageDataLength =  message->payload_len;
+                coap_status_t code = message->code;
 
-                if (IS_OPTION(message, COAP_OPTION_BLOCK1)) {
+                if ((code < COAP_400_BAD_REQUEST) && IS_OPTION(message, COAP_OPTION_BLOCK1)) {
                     uint8_t more = 0;
                     uint32_t block_num = 0;
                     uint32_t block_offset = 0;
                     uint16_t block_size = REST_MAX_CHUNK_SIZE;
                     coap_get_header_block1(message, &block_num, &more, &block_size, &block_offset);
-                    if (more) {
+                    if (more ) {
                         coap_packet_t* transRequest = (coap_packet_t*) transacP->message;
                         large_buffer_t * blockwiseP = transacP->blockwise;
                         transRequest->mid = contextP->nextMID++;
@@ -336,7 +337,6 @@ void transaction_handle_response(lwm2m_context_t * contextP,
                     }
                 }
 
-
                 // HACK: If a message is sent from the monitor callback,
                 // it will arrive before the registration ACK.
                 // So we resend transaction that were denied for authentication reason.
@@ -347,7 +347,7 @@ void transaction_handle_response(lwm2m_context_t * contextP,
                     return;
                 }
 
-                if (IS_OPTION(message, COAP_OPTION_BLOCK2)) {
+                if ((code < COAP_400_BAD_REQUEST) && IS_OPTION(message, COAP_OPTION_BLOCK2)) {
                     uint8_t more = 0;
                     uint32_t resource_size = 0;
                     uint32_t block_num = 0;
@@ -355,11 +355,10 @@ void transaction_handle_response(lwm2m_context_t * contextP,
                     uint16_t block_size = REST_MAX_CHUNK_SIZE;
                     large_buffer_t * blockwiseP = (large_buffer_t *) transacP->blockwise;
                     coap_packet_t* transRequest = (coap_packet_t*) transacP->message;
-                    coap_status_t code = transRequest->code;
 
                     coap_get_header_size2(message, &resource_size);
                     coap_get_header_block2(message, &block_num, &more, &block_size, &block_offset);
-                    LOG("Blockwise: block response %u (%u/%u) %s @ %u bytes\n", block_num, block_size, REST_MAX_CHUNK_SIZE,
+                    LOG("Blockwise: response %u (%u/%u) %s @ %u bytes\n", block_num, block_size, REST_MAX_CHUNK_SIZE,
                                 more ? "more..." : "last", block_offset);
                     block_size = MIN(block_size, REST_MAX_CHUNK_SIZE);
 
@@ -394,6 +393,7 @@ void transaction_handle_response(lwm2m_context_t * contextP,
                         // set accumulated payload for callback
                         message->payload = blockwiseP->buffer;
                         message->payload_len = blockwiseP->length;
+                        message->code = code;
                     }
                 }
                 if (transacP->callback != NULL)
