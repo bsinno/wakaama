@@ -11,17 +11,44 @@
  *    http://www.eclipse.org/org/documents/edl-v10.php.
  *
  * Contributors:
- *    Bosch Software Innovations GmbH - Please refer to git log
+ *    Achim Kraus, Bosch Software Innovations GmbH - Please refer to git log
  *
- *******************************************************************************/
-/*
- *  blockwise.c
- *  basic functions for blockwise data transfer.
+ *******************************************************************************
  *
- *  Created on: 19.12.2014
- *  Author: Achim Kraus
- *  Copyright (c) 2014 Bosch Software Innovations GmbH, Germany. All rights reserved.
- */
+ *  Basic functions for blockwise data transfer.
+ *
+ *  Basic specification (currently draft): draft-ietf-core-coap-18
+ *
+ *  The blockwise transfer of data between a COAP client and a COAP server is
+ *  split into two parts:
+ *  - blockwise request, implemented using COAP option block1 and optional size1
+ *  - blockwise response, implemented using COAP option block2 and optional size2
+ *
+ *  The COAP client handles the blockwise transfer within a "transaction".
+ *  If a request with too large payload is sent (transaction_send), it's split
+ *  into blockwise transfers starting with the first block and using options block1
+ *  and size1. When the COAP client receives the response containing option block1
+ *  for such a blockwise request, it sends the left payload also with option block1
+ *  blockwise until the resource is sent completely or an error occurs (see
+ *  transaction_handle_response). If a response with blockwise payload is received
+ *  (indicated by option block2), a blockwise request with option block2 is sent back
+ *  to get the next blockwise payload (also see transaction_handle_response).
+ *  In both cases the payload is stored or accumulated in a "_large_buffer_"
+ *  assigned to the transaction.
+ *
+ *  The COAP server handles the blockwise transfer in "packet" resource related.
+ *  Blockwise requests are accumulated in "lwm2m_blockwise_t" related to the client/uri pair,
+ *  and blockwise responses is stored in "lwm2m_blockwise_t" related to the uri only.
+ *  Request with option block1 are accumulated and responded with option block1 and
+ *  COAP_231_CONTINUE (see prv_handle_request). When the blockwise request is transfered
+ *  completely, its processed (see prv_handle_request).
+ *  If a response is too large, it's split into blockwise transfer and the first block
+ *  is sent using option block2 and size2. When the COAP server receives the next request
+ *  with option block2 for that resource, it send the next block with option2.
+ *  When for COAP_DEFAULT_MAX_AGE no request with the uri for that resource is received,
+ *  the data is freed (see blockwise_free).
+ *
+ ********************************************************************************/
 
 #include <stdlib.h>
 #include "liblwm2m.h"
@@ -109,7 +136,9 @@ static coap_status_t prv_init_large_buffer(large_buffer_t * large_buffer, coap_p
     return result;
 }
 
-
+/**
+ * Use "fromSessionH" for blockwise requests. Use NULL as "fromSessionH" for blockwise responses.
+ */
 lwm2m_blockwise_t* blockwise_get(lwm2m_context_t * contextP, void * fromSessionH, coap_method_t method, const lwm2m_uri_t * uriP)
 {
     lwm2m_blockwise_t* current = contextP->blockwiseList;
@@ -128,6 +157,9 @@ lwm2m_blockwise_t* blockwise_get(lwm2m_context_t * contextP, void * fromSessionH
     return NULL;
 }
 
+/**
+ * Use "fromSessionH" for blockwise requests. Use NULL as "fromSessionH" for blockwise responses.
+ */
 lwm2m_blockwise_t * blockwise_new(lwm2m_context_t * contextP, void * fromSessionH, coap_method_t method, const lwm2m_uri_t * uriP, coap_packet_t * messageP, bool detach, uint32_t size)
 {
     lwm2m_blockwise_t* result = (lwm2m_blockwise_t *) lwm2m_malloc(sizeof(lwm2m_blockwise_t));
@@ -207,8 +239,12 @@ coap_status_t blockwise_append(lwm2m_blockwise_t * blockwiseP, uint32_t block_of
     return blockwise_append_large_buffer(&(blockwiseP->buffer), block_offset, response);
 }
 
+/**
+ * Either use uriP or remove and use NULL for the other.
+ */
 void blockwise_remove(lwm2m_context_t * contextP, const lwm2m_uri_t * uriP, lwm2m_blockwise_t* remove)
 {
+    if (uriP == NULL && remove == NULL) return;
     lwm2m_blockwise_t* current = contextP->blockwiseList;
     lwm2m_blockwise_t* prev = NULL;
     while (NULL != current)
@@ -234,6 +270,9 @@ void blockwise_remove(lwm2m_context_t * contextP, const lwm2m_uri_t * uriP, lwm2
     }
 }
 
+/**
+ * Check for timeouts of blockwise transfers.
+ */
 void blockwise_free(lwm2m_context_t * contextP, uint32_t time)
 {
     uint32_t timeout;
@@ -285,11 +324,16 @@ coap_status_t blockwise_append_large_buffer(large_buffer_t * large_buffer, uint3
 
     LOG("Blockwise: append %u bytes (at %lu, %lu bytes before)\n", (unsigned int) response->payload_len, (unsigned long)block_offset, (unsigned long)large_buffer->length);
 
+    /* missing content? */
     if (large_buffer->length < block_offset) return COAP_408_ENTITY_INCOMPLETE;
+
+    /* already appended = */
+    if (large_buffer->length >= block_offset + response->payload_len) return NO_ERROR;
 
     large_buffer->length = block_offset + response->payload_len;
     if (large_buffer->length > large_buffer->size)
     {
+        /* resize buffer */
         size_t newSize = large_buffer->size * 2;
         uint8_t* newPayload = lwm2m_malloc(newSize);
         if (NULL == newPayload)
