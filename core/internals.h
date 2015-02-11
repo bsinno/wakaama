@@ -199,7 +199,7 @@ void registration_freeClient(lwm2m_client_t * clientP);
 coap_status_t message_send(lwm2m_context_t * contextP, coap_packet_t * message, void * sessionH);
 
 // defined in observe.c
-void handle_observe_notify(lwm2m_context_t * contextP, void * fromSessionH, coap_packet_t * message);
+void handle_observe_notify(lwm2m_context_t * contextP, void * fromSessionH, coap_packet_t * message, coap_packet_t * response);
 void observation_remove(lwm2m_client_t * clientP, lwm2m_observation_t * observationP);
 
 // defined in utils.c

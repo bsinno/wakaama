@@ -58,11 +58,8 @@ static lwm2m_observed_t * prv_findObserved(lwm2m_context_t * contextP,
     lwm2m_observed_t * targetP;
 
     targetP = contextP->observedList;
-    while (targetP != NULL
-        && (targetP->uri.objectId != uriP->objectId
-         || targetP->uri.flag != uriP->flag
-                    || (LWM2M_URI_IS_SET_INSTANCE(uriP) && targetP->uri.instanceId != uriP->instanceId)
-                    || (LWM2M_URI_IS_SET_RESOURCE(uriP) && targetP->uri.resourceId != uriP->resourceId)))
+    while ((NULL != targetP)
+        && (0 != uri_compare(&(targetP->uri), uriP)))
     {
         targetP = targetP->next;
     }
@@ -78,26 +75,16 @@ static obs_list_t * prv_getObservedList(lwm2m_context_t * contextP,
 
     while (targetP != NULL)
     {
-        if (targetP->uri.objectId == uriP->objectId)
+        if (0 == uri_match(&(targetP->uri), uriP))
         {
-            if (!LWM2M_URI_IS_SET_INSTANCE(uriP)
-             || (targetP->uri.flag & LWM2M_URI_FLAG_INSTANCE_ID) == 0
-                    || uriP->instanceId == targetP->uri.instanceId)
-            {
-                if (!LWM2M_URI_IS_SET_RESOURCE(uriP)
-                 || (targetP->uri.flag & LWM2M_URI_FLAG_RESOURCE_ID) == 0
-                        || uriP->resourceId == targetP->uri.resourceId)
-                {
-                    obs_list_t * newP;
+            obs_list_t * newP;
 
-                    newP = (obs_list_t *) lwm2m_malloc(sizeof(obs_list_t));
-                    if (newP != NULL)
-                    {
-                        newP->item = targetP;
-                        newP->next = resultP;
-                        resultP = newP;
-                    }
-                }
+            newP = (obs_list_t *) lwm2m_malloc(sizeof(obs_list_t));
+            if (newP != NULL)
+            {
+                newP->item = targetP;
+                newP->next = resultP;
+                resultP = newP;
             }
         }
         targetP = targetP->next;
@@ -364,6 +351,7 @@ void lwm2m_resource_value_changed(lwm2m_context_t * contextP,
         object_updateServersInfo(contextP, uriP);
     }
 
+
     listP = prv_getObservedList(contextP, uriP);
     while (listP != NULL)
     {
@@ -570,9 +558,33 @@ int lwm2m_observe_cancel(lwm2m_context_t * contextP,
     return 0;
 }
 
+typedef struct {
+    lwm2m_observation_t * observationP;
+    uint32_t count;
+    uint16_t clientID;
+} observer_notify_t;
+
+static void prv_handle_observe_complete(lwm2m_transaction_t * transacP, void * message)
+{
+    observer_notify_t* userdata = transacP->userData;
+    if (NULL != message && NULL != userdata) {
+        lwm2m_observation_t * observationP = userdata->observationP;
+        if (NULL != observationP) {
+            observationP->callback(userdata->clientID,
+                    &observationP->uri,
+                    (int)userdata->count,
+                    ((coap_packet_t *)message)->payload,
+                    ((coap_packet_t *)message)->payload_len,
+                    observationP->userData);
+        }
+    }
+    lwm2m_free(userdata);
+}
+
 void handle_observe_notify(lwm2m_context_t * contextP,
         void * fromSessionH,
-        coap_packet_t * message)
+        coap_packet_t * message,
+        coap_packet_t * response)
 {
     uint8_t * tokenP;
     int token_len;
@@ -583,32 +595,64 @@ void handle_observe_notify(lwm2m_context_t * contextP,
     uint32_t count;
 
     token_len = coap_get_header_token(message, (const uint8_t **)&tokenP);
-    if (token_len != sizeof(uint32_t)) return;
+    if (token_len != sizeof(uint32_t)) goto error;
 
-    if (1 != coap_get_header_observe(message, &count)) return;
+    if (1 != coap_get_header_observe(message, &count)) goto error;
 
     clientID = (tokenP[0] << 8) | tokenP[1];
     obsID = (tokenP[2] << 8) | tokenP[3];
 
     clientP = (lwm2m_client_t *)lwm2m_list_find((lwm2m_list_t *)contextP->clientList, clientID);
-    if (clientP == NULL) return;
+    if (clientP == NULL) goto error;
 
     observationP = (lwm2m_observation_t *)lwm2m_list_find((lwm2m_list_t *)clientP->observationList, obsID);
     if (observationP == NULL)
     {
-        coap_packet_t resetMsg;
-
-        coap_init_message(&resetMsg, COAP_TYPE_RST, 0, message->mid);
-
-        message_send(contextP, &resetMsg, fromSessionH);
+        coap_init_message(response, COAP_TYPE_RST, 0, message->mid);
+        message_send(contextP, response, fromSessionH);
     }
     else
     {
+        if (message->type == COAP_TYPE_CON ) {
+            coap_init_message(response, COAP_TYPE_ACK, 0, message->mid);
+            message_send(contextP, response, fromSessionH);
+        }
+
+        if (IS_OPTION(message, COAP_OPTION_BLOCK2)) {
+            uint8_t more = 0;
+            uint32_t block_num = 0;
+            coap_get_header_block2(message, &block_num, &more, NULL, NULL);
+            if (more && (0 == block_num)) {
+                lwm2m_transaction_t* transaction = NULL;
+                observer_notify_t* data = lwm2m_malloc(sizeof(observer_notify_t));
+                if (NULL == data) return;
+                data->clientID = clientID;
+                data->count = count;
+                data->observationP = observationP;
+                transaction = transaction_new(COAP_GET, &observationP->uri, message->mid, 4, tokenP, ENDPOINT_CLIENT, clientP);
+                if (NULL == transaction) {
+                    lwm2m_free(data);
+                    return;
+                }
+                transaction->userData = data;
+                transaction->callback = prv_handle_observe_complete;
+                contextP->transactionList = (lwm2m_transaction_t *)LWM2M_LIST_ADD(contextP->transactionList, transaction);
+                transaction_handle_response(contextP, fromSessionH, message);
+            }
+            return;
+        }
+
         observationP->callback(clientID,
                 &observationP->uri,
                 (int)count,
                 message->payload, message->payload_len,
                 observationP->userData);
+    }
+    return;
+error:
+    if (message->type == COAP_TYPE_CON ) {
+        coap_init_message(response, COAP_TYPE_ACK, 0, message->mid);
+        message_send(contextP, response, fromSessionH);
     }
 }
 #endif
