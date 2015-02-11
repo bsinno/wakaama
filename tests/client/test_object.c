@@ -15,6 +15,7 @@
  *    domedambrosio - Please refer to git log
  *    Fabien Fleutot - Please refer to git log
  *    Axel Lorente - Please refer to git log
+ *    Achim Kraus, Bosch Software Innovations GmbH - Please refer to git log
  *    
  *******************************************************************************/
 
@@ -57,9 +58,10 @@
  *
  *  Ressources:
  *              Supported    Multiple
- *  Name | ID | Operations | Instances | Mandatory |  Type   | Range | Units | Description |
- *  test |  1 |    R/W     |    No     |    Yes    | Integer | 0-255 |       |             |
- *  exec |  2 |     E      |    No     |    Yes    |         |       |       |             |
+ *  Name  | ID | Operations | Instances | Mandatory |  Type   | Range | Units | Description |
+ *  test  |  1 |    R/W     |    No     |    Yes    | Integer | 0-255 |       |             |
+ *  exec  |  2 |     E      |    No     |    Yes    |         |       |       |             |
+ *  large |  3 |    R/W     |    No     |    Yes    | blob    |       |       |             |
  *
  */
 
@@ -70,10 +72,7 @@
 #include <string.h>
 #include <ctype.h>
 
-#define PRV_RESOURCE_3_SIZE 190
-
-#define PRV_TLV_BUFFER_SIZE 64
-
+#define INITIAL_BLOB_SIZE (128 * 4)
 
 /*
  * Multiple instance objects can use userdata to store data that will be shared between the different instances.
@@ -89,7 +88,8 @@ typedef struct _prv_instance_
     struct _prv_instance_ * next;   // matches lwm2m_list_t::next
     uint16_t shortID;               // matches lwm2m_list_t::id
     uint8_t  test;
-    int counter;
+    uint32_t blob_length;
+    uint8_t* blob;
 } prv_instance_t;
 
 static void prv_output_buffer(uint8_t * buffer,
@@ -129,43 +129,65 @@ static void prv_output_buffer(uint8_t * buffer,
     }
 }
 
+
+static uint8_t prv_set_value(lwm2m_tlv_t * tlvP,
+        prv_instance_t * devDataP)
+{
+    // a simple switch structure is used to respond at the specified resource asked
+    switch (tlvP->id) {
+    case 1:
+        lwm2m_tlv_encode_int(devDataP->test, tlvP);
+        tlvP->type = LWM2M_TYPE_RESSOURCE;
+        return COAP_205_CONTENT;
+    case 2:
+        return COAP_405_METHOD_NOT_ALLOWED;
+    case 3:
+        tlvP->value = devDataP->blob;
+        tlvP->length = devDataP->blob_length;
+        tlvP->flags |= LWM2M_TLV_FLAG_STATIC_DATA;
+        tlvP->type = LWM2M_TYPE_RESSOURCE;
+        return COAP_205_CONTENT;
+
+    default:
+        return COAP_404_NOT_FOUND;
+    }
+}
+
 static uint8_t prv_read(uint16_t instanceId,
-                        int * numDataP,
-                        lwm2m_tlv_t ** dataArrayP,
-                        lwm2m_object_t * objectP)
+                               int * numDataP,
+                               lwm2m_tlv_t ** dataArrayP,
+                               lwm2m_object_t * objectP)
 {
     prv_instance_t * targetP;
+    int i;
+    uint8_t result;
 
     targetP = (prv_instance_t *)lwm2m_list_find(objectP->instanceList, instanceId);
     if (NULL == targetP) return COAP_404_NOT_FOUND;
 
+    // is the server asking for the full object ?
     if (*numDataP == 0)
     {
-        *dataArrayP = lwm2m_tlv_new(1);
+        uint16_t resList[] = {1, 3,};
+        int nbRes = sizeof(resList)/sizeof(uint16_t);
+
+        *dataArrayP = lwm2m_tlv_new(nbRes);
         if (*dataArrayP == NULL) return COAP_500_INTERNAL_SERVER_ERROR;
-        *numDataP = 1;
-        (*dataArrayP)->id = 1;
+        *numDataP = nbRes;
+        for (i = 0 ; i < nbRes ; i++)
+        {
+            (*dataArrayP)[i].id = resList[i];
+        }
     }
 
-    if (*numDataP != 1) return COAP_404_NOT_FOUND;
+    i = 0;
+    do
+    {
+        result = prv_set_value((*dataArrayP) + i, targetP);
+        i++;
+    } while (i < *numDataP && result == COAP_205_CONTENT);
 
-    if ((*dataArrayP)->id == 1) {
-        lwm2m_tlv_encode_int(targetP->test, *dataArrayP);
-    }
-    else if ((*dataArrayP)->id == 3) {
-        (*dataArrayP)->value = malloc(PRV_RESOURCE_3_SIZE);
-        (*dataArrayP)->length = PRV_RESOURCE_3_SIZE;
-        memset((*dataArrayP)->value, '0' + targetP->counter, PRV_RESOURCE_3_SIZE);
-    }
-    else {
-        return COAP_404_NOT_FOUND;
-    }
-
-    (*dataArrayP)->type = LWM2M_TYPE_RESSOURCE;
-
-    if ((*dataArrayP)->length == 0) return COAP_500_INTERNAL_SERVER_ERROR;
-
-    return COAP_205_CONTENT;
+    return result;
 }
 
 static uint8_t prv_datatype(int resourceId, lwm2m_data_type_t *rDataType) {
@@ -201,11 +223,13 @@ static uint8_t prv_write(uint16_t instanceId,
         targetP->test = (uint8_t)value;
     }
     else if (dataArray->id == 3) {
-        if (1 != lwm2m_tlv_decode_int(dataArray, &value) || value < 0 || value > 9)
-        {
-            return COAP_400_BAD_REQUEST;
-        }
-        targetP->counter = (uint8_t)value;
+        uint32_t length = dataArray->length + 1;
+        free(targetP->blob);
+        targetP->blob = malloc(length);
+        if (NULL == targetP->blob) return COAP_500_INTERNAL_SERVER_ERROR;
+        targetP->blob_length = length;
+        memcpy(targetP->blob, dataArray->value, dataArray->length);
+        targetP->blob[dataArray->length] = 0;
     }
     else {
         return COAP_404_NOT_FOUND;
@@ -222,6 +246,7 @@ static uint8_t prv_delete(uint16_t id,
     objectP->instanceList = lwm2m_list_remove(objectP->instanceList, id, (lwm2m_list_t **)&targetP);
     if (NULL == targetP) return COAP_404_NOT_FOUND;
 
+    free(targetP->blob);
     free(targetP);
 
     return COAP_202_DELETED;
@@ -304,7 +329,10 @@ lwm2m_object_t * get_test_object()
             memset(targetP, 0, sizeof(prv_instance_t));
             targetP->shortID = 10 + i;
             targetP->test = 20 + i;
-            targetP->counter = i;
+            targetP->blob_length = INITIAL_BLOB_SIZE;
+            targetP->blob = malloc(targetP->blob_length);
+            memset(targetP->blob, '0' + i, targetP->blob_length - 1);
+            targetP->blob[targetP->blob_length - 1] = 0;
             testObj->instanceList = LWM2M_LIST_ADD(testObj->instanceList, targetP);
         }
         /*
