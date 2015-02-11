@@ -17,7 +17,7 @@
  *
  *  Basic functions for blockwise data transfer.
  *
- *  Basic specification (currently draft): draft-ietf-core-coap-18
+ *  Basic specification (currently draft): draft-ietf-core-block-16
  *
  *  The blockwise transfer of data between a COAP client and a COAP server is
  *  split into two parts:
@@ -56,36 +56,6 @@
 
 //#define USE_ETAG
 //#define TEST_ETAG
-
-#ifdef WITH_LOGS
-static void prv_logUri(const char* desc, const lwm2m_uri_t * uriP)
-{
-    uint8_t flag = uriP->flag & LWM2M_URI_MASK_ID;
-    LOG("%s flag 0x%x %d/%d/%d\n", desc, flag, uriP->objectId, uriP->instanceId, uriP->resourceId);
-}
-
-#define LOG_URI(D, U) prv_logUri(D, U)
-#else
-#define LOG_URI(D, U)
-#endif
-
-static int prv_blockwise_compare_uri(const lwm2m_uri_t * uri1P, const lwm2m_uri_t * uri2P)
-{
-    uint8_t flag = uri1P->flag & LWM2M_URI_MASK_ID;
-#if 0
-    LOG_URI("URI1:", uri1P);
-    LOG_URI("URI2:", uri2P);
-#endif
-    if (flag != (uri2P->flag & LWM2M_URI_MASK_ID ))
-        return 1;
-    if ((flag & LWM2M_URI_FLAG_OBJECT_ID ) && (uri1P->objectId != uri2P->objectId))
-        return 2;
-    if ((flag & LWM2M_URI_FLAG_INSTANCE_ID ) && (uri1P->instanceId != uri2P->instanceId))
-        return 3;
-    if ((flag & LWM2M_URI_FLAG_RESOURCE_ID ) && (uri1P->resourceId != uri2P->resourceId))
-        return 4;
-    return 0;
-}
 
 static void prv_blockwise_set_time(lwm2m_blockwise_t* current)
 {
@@ -136,6 +106,14 @@ static coap_status_t prv_init_large_buffer(large_buffer_t * large_buffer, coap_p
     return result;
 }
 
+static void prv_blockwise_free(lwm2m_blockwise_t* remove)
+{
+    LOG("Remove blockwise %d bytes for %d/%d/%d\n", remove->buffer.length, remove->uri.objectId,
+            remove->uri.instanceId, remove->uri.resourceId);
+    lwm2m_free(remove->buffer.buffer);
+    lwm2m_free(remove);
+}
+
 /**
  * Use "fromSessionH" for blockwise requests. Use NULL as "fromSessionH" for blockwise responses.
  */
@@ -146,7 +124,7 @@ lwm2m_blockwise_t* blockwise_get(lwm2m_context_t * contextP, void * fromSessionH
     {
         if ((current->method == method) &&
             (current->fromSessionH == fromSessionH) &&
-            (0 == prv_blockwise_compare_uri(&current->uri, uriP)))
+            (0 == uri_compare(&current->uri, uriP)))
         {
             LOG("Found blockwise %d bytes for %d/%d/%d\n", current->buffer.length, current->uri.objectId,
                     current->uri.instanceId, current->uri.resourceId);
@@ -239,17 +217,13 @@ coap_status_t blockwise_append(lwm2m_blockwise_t * blockwiseP, uint32_t block_of
     return blockwise_append_large_buffer(&(blockwiseP->buffer), block_offset, response);
 }
 
-/**
- * Either use uriP or remove and use NULL for the other.
- */
-void blockwise_remove(lwm2m_context_t * contextP, const lwm2m_uri_t * uriP, lwm2m_blockwise_t* remove)
+void blockwise_remove(lwm2m_context_t * contextP, lwm2m_blockwise_t* remove)
 {
-    if (uriP == NULL && remove == NULL) return;
     lwm2m_blockwise_t* current = contextP->blockwiseList;
     lwm2m_blockwise_t* prev = NULL;
     while (NULL != current)
     {
-        if (current == remove || (NULL != uriP && 0 == prv_blockwise_compare_uri(&current->uri, uriP)))
+        if (current == remove)
         {
             if (NULL == prev)
             {
@@ -259,14 +233,38 @@ void blockwise_remove(lwm2m_context_t * contextP, const lwm2m_uri_t * uriP, lwm2
             {
                 prev->next = current->next;
             }
-            LOG("Remove blockwise %d bytes for %d/%d/%d\n", current->buffer.length, current->uri.objectId,
-                    current->uri.instanceId, current->uri.resourceId);
-            lwm2m_free(current->buffer.buffer);
-            lwm2m_free(current);
+            prv_blockwise_free(remove);
             return;
         }
         prev = current;
         current = current->next;
+    }
+}
+
+void blockwise_remove_all(lwm2m_context_t * contextP, const lwm2m_uri_t * uriP)
+{
+    lwm2m_blockwise_t* current = contextP->blockwiseList;
+    lwm2m_blockwise_t* prev = NULL;
+    while (NULL != current)
+    {
+        if (0 == uri_match(&(current->uri), uriP))
+        {
+            lwm2m_blockwise_t* next = current->next;
+            if (NULL == prev)
+            {
+                contextP->blockwiseList = next;
+            }
+            else
+            {
+                prev->next = next;
+            }
+            prv_blockwise_free(current);
+            current = next;
+        }
+        else {
+            prev = current;
+            current = current->next;
+        }
     }
 }
 
@@ -275,41 +273,32 @@ void blockwise_remove(lwm2m_context_t * contextP, const lwm2m_uri_t * uriP, lwm2
  */
 void blockwise_free(lwm2m_context_t * contextP, uint32_t time)
 {
-    uint32_t timeout;
     int removed = 0;
     int pending = 0;
     lwm2m_blockwise_t* current = contextP->blockwiseList;
-    lwm2m_blockwise_t* rem = NULL;
     lwm2m_blockwise_t* prev = NULL;
     while (NULL != current)
     {
-        timeout = current->fromSessionH != NULL ? COAP_DEFAULT_MAX_AGE * 2 : COAP_DEFAULT_MAX_AGE;
-        if ((time - current->time) > timeout)
+        if ((time - current->time) >  COAP_DEFAULT_MAX_AGE * 2)
         {
-            rem = current;
+            lwm2m_blockwise_t* next = current->next;
             if (NULL == prev)
             {
-                contextP->blockwiseList = current->next;
+                contextP->blockwiseList = next;
             }
             else
             {
-                prev->next = current->next;
+                prev->next = next;
             }
             ++removed;
+            prv_blockwise_free(current);
+            current = next;
         }
         else
         {
             ++pending;
             prev = current;
-        }
-        current = current->next;
-        if (NULL != rem)
-        {
-            LOG("Free blockwise %d bytes for %d/%d/%d\n", rem->buffer.length, rem->uri.objectId, rem->uri.instanceId,
-                    rem->uri.resourceId);
-            lwm2m_free(rem->buffer.buffer);
-            lwm2m_free(rem);
-            rem = NULL;
+            current = current->next;
         }
     }
     if (pending || removed)

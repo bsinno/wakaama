@@ -135,9 +135,6 @@ static struct _handle_result_ prv_handle_request(lwm2m_context_t * contextP, voi
         }
         else {
             result.responseCode = blockwise_append(blockwiseIn, block_offset, message);
-            if (NO_ERROR != result.responseCode) {
-                blockwise_remove(contextP, NULL, blockwiseIn);
-            }
         }
         if (block_more && NO_ERROR == result.responseCode) {
             result.responseCode = COAP_231_CONTINUE;

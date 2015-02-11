@@ -357,6 +357,8 @@ void lwm2m_resource_value_changed(lwm2m_context_t * contextP,
 {
     obs_list_t * listP;
 
+    blockwise_remove_all(contextP, uriP);
+
     /* check for changes of server values */
     if (LWM2M_SERVER_OBJECT_ID == uriP->objectId) {
         object_updateServersInfo(contextP, uriP);
@@ -370,7 +372,6 @@ void lwm2m_resource_value_changed(lwm2m_context_t * contextP,
         coap_status_t result;
 
         memset(&data, 0, sizeof(data));
-        blockwise_remove(contextP, &(listP->item->uri), NULL);
 
         result = object_read(contextP, &(listP->item->uri), &(data.buffer), &(data.length));
         if (result == COAP_205_CONTENT)
