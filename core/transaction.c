@@ -14,6 +14,7 @@
  *    David Navarro, Intel Corporation - initial API and implementation
  *    Simon Bernard - Please refer to git log
  *    Toby Jaffey - Please refer to git log
+ *    Achim Kraus, Bosch Software Innovations GmbH - Please refer to git log
  *
  *******************************************************************************/
 
@@ -302,29 +303,6 @@ void transaction_handle_response(lwm2m_context_t * contextP,
                 {
                     found = true;
                     transacP->ack_received = true;
-                    if (IS_OPTION(message, COAP_OPTION_BLOCK1)) {
-                        uint8_t more = 0;
-                        uint32_t block_num = 0;
-                        uint32_t block_offset = 0;
-                        uint16_t block_size = REST_MAX_CHUNK_SIZE;
-                        coap_get_header_block1(message, &block_num, &more, &block_size, &block_offset);
-                        if (more) {
-                            coap_packet_t* transRequest = (coap_packet_t*) transacP->message;
-                            large_buffer_t * blockwiseP = transacP->blockwise;
-                            transRequest->mid = contextP->nextMID++;
-                            block_offset += block_size;
-                            more = block_offset + block_size < blockwiseP->length;
-                            RESET_OPTION(transRequest, COAP_OPTION_SIZE1);
-                            coap_set_header_block1(transRequest, block_num + 1, more, block_size);
-                            if (!more) {
-                                block_size = blockwiseP->length - block_offset;
-                            }
-                            coap_set_payload(transRequest, blockwiseP->buffer + block_offset, block_size);
-                            prv_transaction_reset(transacP);
-                            transaction_send(contextP, transacP);
-                            return;
-                        }
-                    }
                 }
             }
 
@@ -333,6 +311,31 @@ void transaction_handle_response(lwm2m_context_t * contextP,
                 // save original payload
                 void* messageData = message->payload;
                 size_t messageDataLength =  message->payload_len;
+
+                if (IS_OPTION(message, COAP_OPTION_BLOCK1)) {
+                    uint8_t more = 0;
+                    uint32_t block_num = 0;
+                    uint32_t block_offset = 0;
+                    uint16_t block_size = REST_MAX_CHUNK_SIZE;
+                    coap_get_header_block1(message, &block_num, &more, &block_size, &block_offset);
+                    if (more) {
+                        coap_packet_t* transRequest = (coap_packet_t*) transacP->message;
+                        large_buffer_t * blockwiseP = transacP->blockwise;
+                        transRequest->mid = contextP->nextMID++;
+                        block_offset += block_size;
+                        more = block_offset + block_size < blockwiseP->length;
+                        RESET_OPTION(transRequest, COAP_OPTION_SIZE1);
+                        coap_set_header_block1(transRequest, block_num + 1, more, block_size);
+                        if (!more) {
+                            block_size = blockwiseP->length - block_offset;
+                        }
+                        coap_set_payload(transRequest, blockwiseP->buffer + block_offset, block_size);
+                        prv_transaction_reset(transacP);
+                        transaction_send(contextP, transacP);
+                        return;
+                    }
+                }
+
 
                 // HACK: If a message is sent from the monitor callback,
                 // it will arrive before the registration ACK.
