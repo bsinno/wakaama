@@ -206,6 +206,9 @@ static struct _handle_result_ prv_handle_request(lwm2m_context_t * contextP, voi
             }
         }
     }
+    else {
+        result.responseCode = COAP_205_CONTENT;
+    }
 
     if (result.responseCode < BAD_REQUEST_4_00)
     {
@@ -283,22 +286,21 @@ void lwm2m_handle_packet(lwm2m_context_t * contextP,
         else
         {
             if (message->type == COAP_TYPE_NON || message->type == COAP_TYPE_CON ) {
-
 #ifdef LWM2M_SERVER_MODE
                 if ( (message->code == COAP_204_CHANGED || message->code == COAP_205_CONTENT)
                         && IS_OPTION(message, COAP_OPTION_OBSERVE)) {
                     handle_observe_notify(contextP, fromSessionH, message, response);
                 }
-                else
+                else {
 #endif
-#ifdef LWM2M_CLIENT_MODE
-                transaction_handle_response(contextP, fromSessionH, message);
-#endif
-
-                if (message->type == COAP_TYPE_CON ) {
-                    coap_init_message(response, COAP_TYPE_ACK, 0, message->mid);
-                    result.responseCode = message_send(contextP, response, fromSessionH);
+                    if (message->type == COAP_TYPE_CON ) {
+                        coap_init_message(response, COAP_TYPE_ACK, 0, message->mid);
+                        result.responseCode = message_send(contextP, response, fromSessionH);
+                    }
+                    transaction_handle_response(contextP, fromSessionH, message);
+#ifdef LWM2M_SERVER_MODE
                 }
+#endif
             }
             else if (message->type == COAP_TYPE_ACK || message->type == COAP_TYPE_RST ) {
             /* Responses */
