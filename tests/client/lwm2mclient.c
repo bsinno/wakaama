@@ -273,8 +273,6 @@ static void prv_change(char * buffer, void * user_data)
     int result;
 
     end = get_end_of_arg(buffer);
-    if (end[0] == 0)
-        goto syntax_error;
 
     result = lwm2m_stringToUri(buffer, end - buffer, &uri);
     if (result == 0)
