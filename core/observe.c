@@ -521,7 +521,7 @@ int lwm2m_observe(lwm2m_context_t * contextP,
     token[2] = observationP->id >> 8;
     token[3] = observationP->id & 0xFF;
 
-    transactionP = transaction_new(COAP_GET, uriP, contextP->nextMID++, 4, token, ENDPOINT_CLIENT, (void *)clientP);
+    transactionP = transaction_new(COAP_TYPE_CON, COAP_GET, uriP, contextP->nextMID++, 4, token, ENDPOINT_CLIENT, (void *)clientP);
     if (transactionP == NULL)
     {
         lwm2m_free(observationP);
@@ -629,7 +629,7 @@ void handle_observe_notify(lwm2m_context_t * contextP,
                 data->clientID = clientID;
                 data->count = count;
                 data->observationP = observationP;
-                transaction = transaction_new(COAP_GET, &observationP->uri, message->mid, 4, tokenP, ENDPOINT_CLIENT, clientP);
+                transaction = transaction_new(COAP_TYPE_CON, COAP_GET, &observationP->uri, message->mid, 4, tokenP, ENDPOINT_CLIENT, clientP);
                 if (NULL == transaction) {
                     lwm2m_free(data);
                     return;

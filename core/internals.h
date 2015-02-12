@@ -158,12 +158,9 @@ int object_updateServersInfo(lwm2m_context_t * contextP, lwm2m_uri_t * uriP);
 // defined in transaction.c
 /*
  * Create new transaction.
- * if 0 < token_len, then the transaction waits for the response. Otherwise the transaction only waits for the acknowledge.
- * To send a separate response (not "piggy-packed" with the acknowledge) use token_len == 0 and set the token from the request
- * afterwards in the response.
  * if 0 < token_len but token is NULL, a "automatic" value for the token is generated.
  */
-lwm2m_transaction_t * transaction_new(coap_method_t method, lwm2m_uri_t * uriP, uint16_t mID, uint8_t token_len, uint8_t* token, lwm2m_endpoint_type_t peerType, void * peerP);
+lwm2m_transaction_t * transaction_new(coap_message_type_t type, coap_method_t method, lwm2m_uri_t * uriP, uint16_t mID, uint8_t token_len, uint8_t* token, lwm2m_endpoint_type_t peerType, void * peerP);
 int transaction_send(lwm2m_context_t * contextP, lwm2m_transaction_t * transacP);
 void transaction_free(lwm2m_transaction_t * transacP);
 void transaction_remove(lwm2m_context_t * contextP, lwm2m_transaction_t * transacP);

@@ -103,16 +103,26 @@ static int prv_check_addr(void * leftSessionH,
     return 1;
 }
 
-static int prv_check_token(lwm2m_transaction_t * transacP,
-        coap_packet_t * message)
+static int prv_transaction_check_finished(lwm2m_transaction_t * transacP,
+        coap_packet_t * receivedMessage)
 {
-    if (transacP->token_len == 0) return 1;
+    coap_packet_t * transactionMessage = transacP->message;
 
-    if (IS_OPTION(message, COAP_OPTION_TOKEN)) {
+    // check send CON message for ack
+    if (transactionMessage->type == COAP_TYPE_CON && !transacP->ack_received) return 0;
+
+    // check send message for token, if none, the transaction is already finished
+    if (!IS_OPTION(transactionMessage, COAP_OPTION_TOKEN)) return 1;
+
+    // check send message for method/status-code, if a status code is found, the transaction is finished
+    if (COAP_DELETE < transactionMessage->code) return 1;
+
+    // so a request with token was send, wait for response with matching token.
+    if (IS_OPTION(receivedMessage, COAP_OPTION_TOKEN)) {
         const uint8_t* token;
-        int len = coap_get_header_token(message, &token);
-        if (transacP->token_len == len) {
-            if (memcmp(transacP->token, token, len)==0) return 1;
+        int len = coap_get_header_token(receivedMessage, &token);
+        if (transactionMessage->token_len == len) {
+            if (memcmp(transactionMessage->token, token, len)==0) return 1;
         }
     }
 
@@ -128,7 +138,8 @@ static void prv_transaction_reset(lwm2m_transaction_t * transacP)
     transacP->retrans_counter = 0;
 }
 
-lwm2m_transaction_t * transaction_new(coap_method_t method,
+lwm2m_transaction_t * transaction_new(coap_message_type_t type,
+                                      coap_method_t method,
                                       lwm2m_uri_t * uriP,
                                       uint16_t mID,
                                       uint8_t token_len,
@@ -139,6 +150,16 @@ lwm2m_transaction_t * transaction_new(coap_method_t method,
     lwm2m_transaction_t * transacP;
     int result;
 
+    // no transactions for ack or rst
+    if (COAP_TYPE_ACK == type || COAP_TYPE_RST == type) return NULL;
+
+    if (COAP_TYPE_NON == type) {
+        // no transactions for NON responses
+        if (COAP_DELETE < method) return NULL;
+        // no transactions for NON request without token
+        if (0 == token_len) return NULL;
+    }
+
     transacP = (lwm2m_transaction_t *)lwm2m_malloc(sizeof(lwm2m_transaction_t));
 
     if (NULL == transacP) return NULL;
@@ -147,7 +168,7 @@ lwm2m_transaction_t * transaction_new(coap_method_t method,
     transacP->message = lwm2m_malloc(sizeof(coap_packet_t));
     if (NULL == transacP->message) goto error;
 
-    coap_init_message(transacP->message, COAP_TYPE_CON, method, mID);
+    coap_init_message(transacP->message, type, method, mID);
 
     transacP->mID = mID;
     transacP->peerType = peerType;
@@ -306,7 +327,7 @@ void transaction_handle_response(lwm2m_context_t * contextP,
                 }
             }
 
-            if (transacP->ack_received && prv_check_token(transacP, message))
+            if (prv_transaction_check_finished(transacP, message))
             {
                 // save original payload
                 void* messageData = message->payload;

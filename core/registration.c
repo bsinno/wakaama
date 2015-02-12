@@ -198,7 +198,7 @@ static int prv_register(lwm2m_context_t * contextP, lwm2m_server_t * server, uin
 
     if (server->sessionH != NULL)
     {
-        transaction = transaction_new(COAP_POST, NULL, contextP->nextMID++, 4, NULL, ENDPOINT_SERVER, (void *)server);
+        transaction = transaction_new(COAP_TYPE_CON, COAP_POST, NULL, contextP->nextMID++, 4, NULL, ENDPOINT_SERVER, (void *)server);
         if (transaction == NULL) return INTERNAL_SERVER_ERROR_5_00;
 
         coap_set_header_uri_path(transaction->message, "/"URI_REGISTRATION_SEGMENT);
@@ -285,7 +285,7 @@ static int prv_update_registration(lwm2m_context_t * contextP, lwm2m_server_t * 
             return SERVICE_UNAVAILABLE_5_03;
         }
 
-    transaction = transaction_new(COAP_PUT, NULL, contextP->nextMID++, 4, NULL, ENDPOINT_SERVER, (void *)serverP);
+    transaction = transaction_new(COAP_TYPE_CON, COAP_PUT, NULL, contextP->nextMID++, 4, NULL, ENDPOINT_SERVER, (void *)serverP);
     if (transaction == NULL) return INTERNAL_SERVER_ERROR_5_00;
 
     coap_set_header_uri_path(transaction->message, serverP->location);
@@ -490,7 +490,7 @@ void registration_deregister(lwm2m_context_t * contextP,
         }
 
     lwm2m_transaction_t * transaction;
-    transaction = transaction_new(COAP_DELETE, NULL, contextP->nextMID++, 4, NULL, ENDPOINT_SERVER, (void *)serverP);
+    transaction = transaction_new(COAP_TYPE_CON, COAP_DELETE, NULL, contextP->nextMID++, 4, NULL, ENDPOINT_SERVER, (void *)serverP);
     if (transaction == NULL) return;
 
     coap_set_header_uri_path(transaction->message, serverP->location);
