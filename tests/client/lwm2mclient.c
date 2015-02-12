@@ -283,7 +283,7 @@ static void prv_change(char * buffer, void * user_data)
     }
     else
     {
-        handle_value_changed(lwm2mH, &uri, buffer, end - buffer);
+        handle_value_changed(lwm2mH, &uri, buffer, strlen(buffer));
     }
     return;
 

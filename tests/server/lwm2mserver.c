@@ -375,7 +375,7 @@ static void prv_write_client(char * buffer,
 
     if (!check_end_of_args(end)) goto syntax_error;
 
-    result = lwm2m_dm_write(lwm2mH, clientId, &uri, buffer, end - buffer, prv_result_callback, NULL);
+    result = lwm2m_dm_write(lwm2mH, clientId, &uri, buffer, strlen(buffer), prv_result_callback, NULL);
 
     if (result == 0)
     {
