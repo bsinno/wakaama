@@ -80,6 +80,26 @@ Contains code snippets which are:
 
 */
 
+/************************************************************************
+ *  Function for communications transactions.
+ *
+ *  Basic specification: rfc7252
+ *
+ *  Transaction implements processing of several communication dialogs specified in the
+ *  above specification.
+ *  The caller registers a callback function, which is called, when either the result is
+ *  received or a timeout occurs.
+ *
+ *  Supported dialogs:
+ *  Requests (GET - DELETE):
+ *  - CON with mid, without token => regular finished with corresponding ACK.MID
+ *  - CON with mid, with token => regular finished with corresponding ACK.MID and response containing
+ *                  the token. Supports both versions, with piggybacked ACK and separate ACK/response.
+ *  - NON without token => no transaction, no result expected!
+ *  - NON with token => regular finished with response containing the token.
+ *  Responses (COAP_201_CREATED - ?):
+ *  - CON with mid => regular finished with corresponding ACK.MID
+ */
 
 #include "internals.h"
 
