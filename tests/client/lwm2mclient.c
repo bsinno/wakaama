@@ -636,6 +636,7 @@ int main(int argc, char *argv[])
                 if (numBytes > 1)
                 {
                     buffer[numBytes] = 0;
+                    trim((char*) buffer);
                     fprintf(stdout, "STDIN %d bytes '%s'\r\n> ", numBytes, buffer);
 
                     /*
