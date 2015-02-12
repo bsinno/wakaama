@@ -90,6 +90,9 @@ Contains code snippets which are:
 #define COAP_RESPONSE_TIMEOUT_TICKS         (CLOCK_SECOND * COAP_RESPONSE_TIMEOUT)
 #define COAP_RESPONSE_TIMEOUT_BACKOFF_MASK  ((CLOCK_SECOND * COAP_RESPONSE_TIMEOUT * (COAP_RESPONSE_RANDOM_FACTOR - 1)) + 1.5)
 
+
+#define TRANSACTION_OBSERVE_OPTION 0x80000000
+
 static int prv_check_addr(void * leftSessionH,
                           void * rightSessionH)
 {
@@ -226,6 +229,7 @@ lwm2m_transaction_t * transaction_new(coap_message_type_t type,
             // generate a token
             uint8_t temp_token[COAP_TOKEN_LEN];
             struct timeval tv;
+
             lwm2m_gettimeofday(&tv, NULL);
 
             // initialize first 6 bytes, leave the last 2 random
@@ -322,6 +326,7 @@ void transaction_handle_response(lwm2m_context_t * contextP,
 
         if (prv_check_addr(fromSessionH, targetSessionH))
         {
+            coap_packet_t * transactionMessage = (coap_packet_t *) transacP->message;
             if (!transacP->ack_received)
             {
                 if (transacP->mID == message->mid)
@@ -334,7 +339,7 @@ void transaction_handle_response(lwm2m_context_t * contextP,
             if (prv_transaction_check_finished(transacP, message))
             {
                 // save original payload
-                void* messageData = message->payload;
+                void * messageData = message->payload;
                 size_t messageDataLength =  message->payload_len;
                 coap_status_t code = message->code;
 
@@ -345,17 +350,16 @@ void transaction_handle_response(lwm2m_context_t * contextP,
                     uint16_t block_size = REST_MAX_CHUNK_SIZE;
                     coap_get_header_block1(message, &block_num, &more, &block_size, &block_offset);
                     if (more ) {
-                        coap_packet_t* transRequest = (coap_packet_t*) transacP->message;
                         large_buffer_t * blockwiseP = transacP->blockwise;
-                        transRequest->mid = contextP->nextMID++;
+                        transactionMessage->mid = contextP->nextMID++;
                         block_offset += block_size;
                         more = block_offset + block_size < blockwiseP->length;
-                        RESET_OPTION(transRequest, COAP_OPTION_SIZE1);
-                        coap_set_header_block1(transRequest, block_num + 1, more, block_size);
+                        RESET_OPTION(transactionMessage, COAP_OPTION_SIZE1);
+                        coap_set_header_block1(transactionMessage, block_num + 1, more, block_size);
                         if (!more) {
                             block_size = blockwiseP->length - block_offset;
                         }
-                        coap_set_payload(transRequest, blockwiseP->buffer + block_offset, block_size);
+                        coap_set_payload(transactionMessage, blockwiseP->buffer + block_offset, block_size);
                         prv_transaction_reset(transacP);
                         transaction_send(contextP, transacP);
                         return;
@@ -379,7 +383,6 @@ void transaction_handle_response(lwm2m_context_t * contextP,
                     uint32_t block_offset = 0;
                     uint16_t block_size = REST_MAX_CHUNK_SIZE;
                     large_buffer_t * blockwiseP = (large_buffer_t *) transacP->blockwise;
-                    coap_packet_t* transRequest = (coap_packet_t*) transacP->message;
 
                     coap_get_header_size2(message, &resource_size);
                     coap_get_header_block2(message, &block_num, &more, &block_size, &block_offset);
@@ -397,14 +400,23 @@ void transaction_handle_response(lwm2m_context_t * contextP,
                         }
                     }
                     else {
-                        code = blockwise_append_large_buffer(blockwiseP, block_offset, message);
+                        coap_status_t appendResult = blockwise_append_large_buffer(blockwiseP, block_offset, message);
+                        if (COAP_400_BAD_REQUEST <= appendResult) {
+                            code = appendResult;
+                        }
                     }
                     if (more) {
                         if (code < COAP_400_BAD_REQUEST) {
+                            if (coap_get_header_observe(message, &(transacP->observe))) {
+                                // save observe option
+                                LOG("Blockwise: save observe %lu\n", (unsigned long) transacP->observe);
+                                transacP->observe |= TRANSACTION_OBSERVE_OPTION;
+                            }
                             // request next block
-                            transRequest->mid = contextP->nextMID++;
-                            transRequest->payload_len = 0;
-                            coap_set_header_block2(transRequest, block_num + 1, 1, block_size);
+                            transactionMessage->mid = contextP->nextMID++;
+                            transactionMessage->payload_len = 0;
+                            RESET_OPTION(transactionMessage, COAP_OPTION_OBSERVE);
+                            coap_set_header_block2(transactionMessage, block_num + 1, 1, block_size);
                             prv_transaction_reset(transacP);
                             transaction_send(contextP, transacP);
                             return;
@@ -423,6 +435,12 @@ void transaction_handle_response(lwm2m_context_t * contextP,
                 }
                 if (transacP->callback != NULL)
                 {
+                    if (!IS_OPTION(message, COAP_OPTION_OBSERVE) && (transacP->observe & TRANSACTION_OBSERVE_OPTION)) {
+                        // restore observe option
+                        transacP->observe &= ~TRANSACTION_OBSERVE_OPTION;
+                        LOG("Blockwise: restore observe %lu\n", (long unsigned) transacP->observe);
+                        coap_set_header_observe(message, transacP->observe);
+                    }
                     transacP->callback(transacP, message);
                 }
                 transaction_remove(contextP, transacP);

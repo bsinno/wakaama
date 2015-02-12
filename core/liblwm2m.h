@@ -493,6 +493,7 @@ struct _lwm2m_transaction_
     uint8_t *             buffer;
     uint16_t              blocksize;
     large_buffer_t*       blockwise;
+    uint32_t              observe;
     lwm2m_transaction_callback_t callback;
     void *                userData;
 };

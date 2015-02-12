@@ -557,25 +557,20 @@ int lwm2m_observe_cancel(lwm2m_context_t * contextP,
 
 typedef struct {
     lwm2m_observation_t * observationP;
-    uint32_t count;
     uint16_t clientID;
 } observer_notify_t;
 
 static void prv_handle_observe_complete(lwm2m_transaction_t * transacP, void * message)
 {
-    observer_notify_t* userdata = transacP->userData;
-    if (NULL != message && NULL != userdata) {
-        lwm2m_observation_t * observationP = userdata->observationP;
-        if (NULL != observationP) {
-            observationP->callback(userdata->clientID,
-                    &observationP->uri,
-                    (int)userdata->count,
-                    ((coap_packet_t *)message)->payload,
-                    ((coap_packet_t *)message)->payload_len,
-                    observationP->userData);
-        }
+    lwm2m_observation_t * observationP = transacP->userData;
+    if (NULL != message && NULL != observationP) {
+        observationP->callback(observationP->clientP->internalID,
+            &observationP->uri,
+            (int)((coap_packet_t *)message)->observe,
+            ((coap_packet_t *)message)->payload,
+            ((coap_packet_t *)message)->payload_len,
+            observationP->userData);
     }
-    lwm2m_free(userdata);
 }
 
 void handle_observe_notify(lwm2m_context_t * contextP,
@@ -620,18 +615,11 @@ void handle_observe_notify(lwm2m_context_t * contextP,
             uint32_t block_num = 0;
             coap_get_header_block2(message, &block_num, &more, NULL, NULL);
             if (more && (0 == block_num)) {
-                lwm2m_transaction_t* transaction = NULL;
-                observer_notify_t* data = lwm2m_malloc(sizeof(observer_notify_t));
-                if (NULL == data) return;
-                data->clientID = clientID;
-                data->count = count;
-                data->observationP = observationP;
-                transaction = transaction_new(COAP_TYPE_CON, COAP_GET, &observationP->uri, message->mid, 4, tokenP, ENDPOINT_CLIENT, clientP);
+                lwm2m_transaction_t* transaction = transaction_new(COAP_TYPE_CON, COAP_GET, &observationP->uri, message->mid, 4, tokenP, ENDPOINT_CLIENT, clientP);
                 if (NULL == transaction) {
-                    lwm2m_free(data);
                     return;
                 }
-                transaction->userData = data;
+                transaction->userData = observationP;
                 transaction->callback = prv_handle_observe_complete;
                 contextP->transactionList = (lwm2m_transaction_t *)LWM2M_LIST_ADD(contextP->transactionList, transaction);
                 transaction_handle_response(contextP, fromSessionH, message);
