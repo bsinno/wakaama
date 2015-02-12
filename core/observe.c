@@ -481,7 +481,7 @@ static void prv_obsRequestCallback(lwm2m_transaction_t * transacP,
         observationP->clientP->observationList = (lwm2m_observation_t *)LWM2M_LIST_ADD(observationP->clientP->observationList, observationP);
         observationP->callback(((lwm2m_client_t*)transacP->peerP)->internalID,
                 &observationP->uri,
-                0,
+                (int) packet->observe,
                 packet->payload, packet->payload_len,
                 observationP->userData);
     }
