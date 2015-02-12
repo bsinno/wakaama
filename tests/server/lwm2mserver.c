@@ -309,7 +309,14 @@ static void prv_notify_callback(uint16_t clientID,
     if (data != NULL)
     {
         fprintf(stdout, "%d bytes received:\r\n", dataLength);
-        output_buffer(stdout, data, dataLength);
+        if (LWM2M_URI_IS_SET_RESOURCE(uriP))
+        {
+            output_buffer(stdout, data, dataLength);
+        }
+        else
+        {
+            output_tlv((char*)data, dataLength, 2);
+        }
     }
 
     fprintf(stdout, "\r\n> ");
