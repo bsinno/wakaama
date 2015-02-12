@@ -408,10 +408,7 @@ static lwm2m_observation_t * prv_findObservationByURI(lwm2m_client_t * clientP,
     targetP = clientP->observationList;
     while (targetP != NULL)
     {
-        if (targetP->uri.objectId == uriP->objectId
-                && targetP->uri.flag == uriP->flag
-                && targetP->uri.instanceId == uriP->instanceId
-                && targetP->uri.resourceId == uriP->resourceId)
+        if (uri_compare(&(targetP->uri), uriP) == 0)
         {
             return targetP;
         }
