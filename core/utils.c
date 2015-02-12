@@ -307,7 +307,8 @@ static void prv_print_hex(const char* head, int len, const uint8_t* data)
     }
 }
 
-static void prv_print_multi_option(const char* head, multi_option_t* multi) {
+static void prv_print_multi_option(const char* head, multi_option_t* multi)
+{
     int index = 0;
     while (NULL != multi) {
         if (0 < multi->len) {
@@ -319,7 +320,8 @@ static void prv_print_multi_option(const char* head, multi_option_t* multi) {
     }
 }
 
-static void prv_print_option_block(const char* head, coap_packet_t* message, int num) {
+static void prv_print_option_block(const char* head, coap_packet_t* message, int num)
+{
     uint8_t  block_more = 0;
     uint32_t block_num = 0;
     uint16_t block_size = REST_MAX_CHUNK_SIZE;
@@ -336,7 +338,8 @@ static void prv_print_option_block(const char* head, coap_packet_t* message, int
     }
 }
 
-static void prv_print_option_size(const char* head, coap_packet_t* message, int num) {
+static void prv_print_option_size(const char* head, coap_packet_t* message, int num)
+{
     uint32_t size = 0;
     int result = 0;
     if (1 == num) {
@@ -347,6 +350,14 @@ static void prv_print_option_size(const char* head, coap_packet_t* message, int 
     }
     if (result) {
         fprintf(stdout, "  %s%d: %lu\n", head, num, (unsigned long)size);
+    }
+}
+
+static void prv_print_option_observe(const char* head, coap_packet_t* message)
+{
+    uint32_t value = 0;
+    if (coap_get_header_observe(message, &value)) {
+        fprintf(stdout, "  %s: %lu\n", head, (unsigned long)value);
     }
 }
 
@@ -363,6 +374,7 @@ void lwm2m_print_status(const char* head, coap_packet_t* message, int size)
     prv_print_multi_option("Query", message->uri_query);
     prv_print_multi_option("Location", message->location_path);
     prv_print_hex("ETag", message->etag_len, message->etag);
+    prv_print_option_observe("Observe", message);
     prv_print_option_block("Block", message, 1);
     prv_print_option_block("Block", message, 2);
     prv_print_option_size("Size", message, 1);
