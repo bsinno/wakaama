@@ -253,6 +253,12 @@ static void prv_output_servers(char * buffer, void * user_data)
         case STATE_REG_FAILED:
             fprintf(stdout, "REGISTRATION FAILED\r\n");
             break;
+        case STATE_DISABLE_PENDING:
+            fprintf(stdout, "DISABLE PENDING\r\n");
+            break;
+        case STATE_DISABLED:
+            fprintf(stdout, "DISABLED\r\n");
+            break;
         }
         fprintf(stdout, "\r\n");
     }
