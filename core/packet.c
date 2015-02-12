@@ -155,7 +155,7 @@ static struct _handle_result_ prv_handle_request(lwm2m_context_t * contextP, voi
     }
 
     /* observe requests (GET/OPTION(OBSERVE) have side effects and therefore must be always handled */
-    if (message->code != COAP_GET || !IS_OPTION(message, COAP_OPTION_OBSERVE))
+    if (0 < block_num || message->code != COAP_GET || !IS_OPTION(message, COAP_OPTION_OBSERVE))
     {
         blockwiseOut = blockwise_get(contextP, NULL, message->code, uriP);
     }
