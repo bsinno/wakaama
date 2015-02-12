@@ -488,8 +488,6 @@ struct _lwm2m_transaction_
     char                  objStringID[LWM2M_STRING_ID_MAX_LEN];
     char                  instanceStringID[LWM2M_STRING_ID_MAX_LEN];
     char                  resourceStringID[LWM2M_STRING_ID_MAX_LEN];
-    uint8_t               token_len; // token length, if transaction should wait for response
-    uint8_t               token[LWM2M_TOKEN_MAX_LEN]; // token
     void *                message;
     uint32_t              buffer_len;
     uint8_t *             buffer;

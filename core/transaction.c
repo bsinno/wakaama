@@ -216,24 +216,28 @@ lwm2m_transaction_t * transaction_new(coap_message_type_t type,
             coap_set_header_uri_path_segment(transacP->message, transacP->resourceStringID);
         }
     }
-    transacP->token_len = token_len;
     if (0 < token_len)
     {
         if (NULL != token)
         {
-            memcpy(transacP->token, token, token_len);
+            coap_set_header_token(transacP->message, token, token_len);
         }
         else {
+            // generate a token
+            uint8_t temp_token[COAP_TOKEN_LEN];
             struct timeval tv;
             lwm2m_gettimeofday(&tv, NULL);
-            transacP->token[0] = mID;
-            transacP->token[1] = mID >> 8;
-            transacP->token[2] = tv.tv_sec;
-            transacP->token[3] = tv.tv_sec >> 8;
-            transacP->token[4] = tv.tv_sec >> 16;
-            transacP->token[5] = tv.tv_sec >> 24;
+
+            // initialize first 6 bytes, leave the last 2 random
+            temp_token[0] = mID;
+            temp_token[1] = mID >> 8;
+            temp_token[2] = tv.tv_sec;
+            temp_token[3] = tv.tv_sec >> 8;
+            temp_token[4] = tv.tv_sec >> 16;
+            temp_token[5] = tv.tv_sec >> 24;
+            // use just the provided amount of bytes
+            coap_set_header_token(transacP->message, temp_token, token_len);
         }
-        coap_set_header_token(transacP->message, transacP->token, token_len);
     }
 
     return transacP;
