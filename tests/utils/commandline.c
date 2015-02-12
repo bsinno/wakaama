@@ -118,12 +118,14 @@ void handle_command(command_desc_t * commandArray,
     }
 }
 
-static char* prv_end_of_space(char* buffer) {
+static char* prv_end_of_space(char* buffer)
+{
     while (isspace(buffer[0]&0xff)) buffer++;
     return buffer;
 }
 
-char* get_end_of_arg(char* buffer) {
+char* get_end_of_arg(char* buffer)
+{
     while (buffer[0] != 0 && !isspace(buffer[0]&0xff)) buffer++;
     return buffer;
 }
@@ -141,8 +143,20 @@ char * get_next_arg(char * buffer, char** end)
     return buffer;
 }
 
-int check_end_of_args(char* buffer) {
+int check_end_of_args(char* buffer)
+{
     buffer = prv_end_of_space(buffer);
     return 0 == buffer[0];
 }
+
+void trim(char* buffer)
+{
+    char* end = buffer;
+    while (*buffer) {
+        if (*buffer != '\n' && *buffer != '\r') end = buffer + 1;
+        ++buffer;
+    }
+    *end = 0;
+}
+
 
