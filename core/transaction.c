@@ -161,6 +161,136 @@ static void prv_transaction_reset(lwm2m_transaction_t * transacP)
     transacP->retrans_counter = 0;
 }
 
+static int prv_transaction_send_next_block(lwm2m_context_t * contextP, coap_packet_t * message, lwm2m_transaction_t * transacP)
+{
+    uint8_t more = 0;
+    uint32_t block_num = 0;
+    uint32_t block_offset = 0;
+    uint16_t block_size = REST_MAX_CHUNK_SIZE;
+    coap_status_t code = message->code;
+    coap_packet_t * transactionMessage = (coap_packet_t *) transacP->message;
+    large_buffer_t * blockwiseP = transacP->blockwise;
+
+    coap_get_header_block1(message, &block_num, &more, &block_size, &block_offset);
+
+    if (COAP_413_ENTITY_TOO_LARGE == code) {
+        if (0 == block_num && block_size < transacP->blocksize) {
+            if (NULL == transacP->blockwise) {
+                transacP->blockwise = blockwise_new_large_buffer(transactionMessage, transactionMessage->payload_len);
+                if (NULL == transacP->blockwise) {
+                    return 0;
+                }
+            }
+            more = 1;
+            transacP->blocksize = block_size;
+            coap_set_header_size1(transactionMessage, transacP->blockwise->length);
+            coap_set_payload(transactionMessage, transacP->blockwise->buffer, block_size);
+        }
+        else {
+            // transaction must be finished with error COAP_413_ENTITY_TOO_LARGE
+            return 0;
+        }
+    }
+    else if (NULL == blockwiseP) {
+        // no blockwise transfer
+        return 0;
+    }
+    else {
+        if (block_size < transacP->blocksize) {
+            // adjust block_num & block_offset
+            uint16_t oldSize;
+            if ((0 == block_num) && coap_get_header_block1(message, NULL, NULL, &oldSize, NULL)) {
+                block_offset = oldSize;
+                transacP->blocksize = block_size;
+                block_num = oldSize / block_size;
+            }
+            else {
+                // TODO: Client error ?
+                return 0;
+            }
+        }
+        else {
+            block_offset += block_size;
+            ++block_num;
+        }
+        if (block_offset < blockwiseP->length) {
+            // next block
+            uint16_t length = block_size;
+            RESET_OPTION(transactionMessage, COAP_OPTION_SIZE1);
+            more = block_offset + block_size < blockwiseP->length;
+            if (!more) length = blockwiseP->length - block_offset;
+            coap_set_payload(transactionMessage, blockwiseP->buffer + block_offset, length);
+        }
+        else {
+            // transfer finished.
+            return 0;
+        }
+    }
+
+    transactionMessage->mid = contextP->nextMID++;
+    coap_set_header_block1(transactionMessage, block_num, more, block_size);
+    prv_transaction_reset(transacP);
+    transaction_send(contextP, transacP);
+    return 1;
+}
+
+static int prv_transaction_request_next_block(lwm2m_context_t * contextP, coap_packet_t * message, lwm2m_transaction_t * transacP)
+{
+    uint8_t more = 0;
+    uint32_t resource_size = 0;
+    uint32_t block_num = 0;
+    uint32_t block_offset = 0;
+    uint16_t block_size = REST_MAX_CHUNK_SIZE;
+    coap_status_t code = message->code;
+    large_buffer_t * blockwiseP = (large_buffer_t *) transacP->blockwise;
+
+    coap_get_header_size2(message, &resource_size);
+    coap_get_header_block2(message, &block_num, &more, &block_size, &block_offset);
+    LOG("Blockwise: response %u (%u/%u) %s @ %u bytes\n", block_num, block_size, REST_MAX_CHUNK_SIZE,
+                more ? "more..." : "last", block_offset);
+    block_size = MIN(block_size, REST_MAX_CHUNK_SIZE);
+
+    if (NULL == blockwiseP) {
+        blockwiseP = blockwise_new_large_buffer(message, resource_size);
+        if (NULL == blockwiseP) {
+            code = COAP_500_INTERNAL_SERVER_ERROR;
+        }
+        else {
+            transacP->blockwise = blockwiseP;
+        }
+    }
+    else {
+        coap_status_t appendResult = blockwise_append_large_buffer(blockwiseP, block_offset, message);
+        if (COAP_400_BAD_REQUEST <= appendResult) {
+            code = appendResult;
+        }
+    }
+    if (more && COAP_400_BAD_REQUEST > code) {
+        coap_packet_t * transactionMessage = (coap_packet_t *) transacP->message;
+        if (coap_get_header_observe(message, &(transacP->observe))) {
+            // save observe option
+            LOG("Blockwise: save observe %lu\n", (unsigned long) transacP->observe);
+            transacP->observe |= TRANSACTION_OBSERVE_OPTION;
+        }
+        // request next block
+        transactionMessage->mid = contextP->nextMID++;
+        transactionMessage->payload_len = 0;
+        RESET_OPTION(transactionMessage, COAP_OPTION_OBSERVE);
+        // on request the more bit in option2 must be zero
+        coap_set_header_block2(transactionMessage, block_num + 1, 0, block_size);
+        prv_transaction_reset(transacP);
+        transaction_send(contextP, transacP);
+        return 1;
+    }
+    else {
+        // set accumulated payload for callback
+        message->payload = blockwiseP->buffer;
+        message->payload_len = blockwiseP->length;
+        message->code = code;
+    }
+    return 0;
+}
+
 lwm2m_transaction_t * transaction_new(coap_message_type_t type,
                                       coap_method_t method,
                                       lwm2m_uri_t * uriP,
@@ -321,7 +451,7 @@ void transaction_handle_response(lwm2m_context_t * contextP,
 
     transacP = contextP->transactionList;
 
-    while (transacP != NULL)
+    while (NULL != transacP)
     {
         void * targetSessionH;
 
@@ -346,7 +476,6 @@ void transaction_handle_response(lwm2m_context_t * contextP,
 
         if (prv_check_addr(fromSessionH, targetSessionH))
         {
-            coap_packet_t * transactionMessage = (coap_packet_t *) transacP->message;
             if (!transacP->ack_received)
             {
                 if (transacP->mID == message->mid)
@@ -358,104 +487,37 @@ void transaction_handle_response(lwm2m_context_t * contextP,
 
             if (prv_transaction_check_finished(transacP, message))
             {
-                // save original payload
+                // save original payload, maybe replaced by blockwise read
                 void * messageData = message->payload;
                 size_t messageDataLength =  message->payload_len;
                 coap_status_t code = message->code;
 
-                if ((code < COAP_400_BAD_REQUEST) && IS_OPTION(message, COAP_OPTION_BLOCK1)) {
-                    uint8_t more = 0;
-                    uint32_t block_num = 0;
-                    uint32_t block_offset = 0;
-                    uint16_t block_size = REST_MAX_CHUNK_SIZE;
-                    coap_get_header_block1(message, &block_num, &more, &block_size, &block_offset);
-                    if (more ) {
-                        large_buffer_t * blockwiseP = transacP->blockwise;
-                        transactionMessage->mid = contextP->nextMID++;
-                        block_offset += block_size;
-                        more = block_offset + block_size < blockwiseP->length;
-                        RESET_OPTION(transactionMessage, COAP_OPTION_SIZE1);
-                        coap_set_header_block1(transactionMessage, block_num + 1, more, block_size);
-                        if (!more) {
-                            block_size = blockwiseP->length - block_offset;
-                        }
-                        coap_set_payload(transactionMessage, blockwiseP->buffer + block_offset, block_size);
-                        prv_transaction_reset(transacP);
-                        transaction_send(contextP, transacP);
-                        return;
+                if (IS_OPTION(message, COAP_OPTION_BLOCK1)) {
+                    if ((COAP_400_BAD_REQUEST > code) || (COAP_413_ENTITY_TOO_LARGE == code)) {
+                        if (prv_transaction_send_next_block(contextP, message, transacP))
+                            return;
                     }
                 }
 
                 // HACK: If a message is sent from the monitor callback,
                 // it will arrive before the registration ACK.
                 // So we resend transaction that were denied for authentication reason.
-                if ((message->code == COAP_401_UNAUTHORIZED) && (COAP_MAX_RETRANSMIT < transacP->retrans_counter))
+                if ((COAP_401_UNAUTHORIZED == code) && (COAP_MAX_RETRANSMIT < transacP->retrans_counter))
                 {
                     transacP->ack_received = false;
                     transacP->retrans_time += COAP_RESPONSE_TIMEOUT;
                     return;
                 }
 
-                if ((code < COAP_400_BAD_REQUEST) && IS_OPTION(message, COAP_OPTION_BLOCK2)) {
-                    uint8_t more = 0;
-                    uint32_t resource_size = 0;
-                    uint32_t block_num = 0;
-                    uint32_t block_offset = 0;
-                    uint16_t block_size = REST_MAX_CHUNK_SIZE;
-                    large_buffer_t * blockwiseP = (large_buffer_t *) transacP->blockwise;
-
-                    coap_get_header_size2(message, &resource_size);
-                    coap_get_header_block2(message, &block_num, &more, &block_size, &block_offset);
-                    LOG("Blockwise: response %u (%u/%u) %s @ %u bytes\n", block_num, block_size, REST_MAX_CHUNK_SIZE,
-                                more ? "more..." : "last", block_offset);
-                    block_size = MIN(block_size, REST_MAX_CHUNK_SIZE);
-
-                    if (NULL == blockwiseP) {
-                        blockwiseP = blockwise_new_large_buffer(message, resource_size);
-                        if (NULL == blockwiseP) {
-                            code = COAP_500_INTERNAL_SERVER_ERROR;
-                        }
-                        else {
-                            transacP->blockwise = blockwiseP;
-                        }
-                    }
-                    else {
-                        coap_status_t appendResult = blockwise_append_large_buffer(blockwiseP, block_offset, message);
-                        if (COAP_400_BAD_REQUEST <= appendResult) {
-                            code = appendResult;
-                        }
-                    }
-                    if (more) {
-                        if (code < COAP_400_BAD_REQUEST) {
-                            if (coap_get_header_observe(message, &(transacP->observe))) {
-                                // save observe option
-                                LOG("Blockwise: save observe %lu\n", (unsigned long) transacP->observe);
-                                transacP->observe |= TRANSACTION_OBSERVE_OPTION;
-                            }
-                            // request next block
-                            transactionMessage->mid = contextP->nextMID++;
-                            transactionMessage->payload_len = 0;
-                            RESET_OPTION(transactionMessage, COAP_OPTION_OBSERVE);
-                            coap_set_header_block2(transactionMessage, block_num + 1, 1, block_size);
-                            prv_transaction_reset(transacP);
-                            transaction_send(contextP, transacP);
-                            return;
-                        }
-                        else {
-                            // out of memory, report error with NULL
-                            message = NULL;
-                        }
-                    }
-                    else {
-                        // set accumulated payload for callback
-                        message->payload = blockwiseP->buffer;
-                        message->payload_len = blockwiseP->length;
-                        message->code = code;
-                    }
+                if ((COAP_400_BAD_REQUEST > code) && IS_OPTION(message, COAP_OPTION_BLOCK2)) {
+                    if (prv_transaction_request_next_block(contextP, message, transacP))
+                        return;
+                    if (COAP_400_BAD_REQUEST <= code)
+                        message = NULL; // can't read it, not enough memory!
                 }
                 if (transacP->callback != NULL)
                 {
-                    if (!IS_OPTION(message, COAP_OPTION_OBSERVE) && (transacP->observe & TRANSACTION_OBSERVE_OPTION)) {
+                    if (NULL != message && !IS_OPTION(message, COAP_OPTION_OBSERVE) && (transacP->observe & TRANSACTION_OBSERVE_OPTION)) {
                         // restore observe option
                         transacP->observe &= ~TRANSACTION_OBSERVE_OPTION;
                         LOG("Blockwise: restore observe %lu\n", (long unsigned) transacP->observe);
