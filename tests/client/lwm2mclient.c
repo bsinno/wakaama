@@ -584,7 +584,7 @@ int main(int argc, char *argv[])
                 /*
                  * We retrieve the data received
                  */
-                numBytes = recvfrom(data.sock, buffer, MAX_PACKET_SIZE, 0, (struct sockaddr *) &addr, &addrLen);
+                numBytes = recvfrom(data.sock, buffer, MAX_PACKET_SIZE + 1, 0, (struct sockaddr *) &addr, &addrLen);
 
                 if (0 > numBytes)
                 {

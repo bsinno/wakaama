@@ -821,7 +821,7 @@ int main(int argc, char *argv[])
                 socklen_t addrLen;
 
                 addrLen = sizeof(addr);
-                numBytes = recvfrom(sock, buffer, MAX_PACKET_SIZE, 0, (struct sockaddr *)&addr, &addrLen);
+                numBytes = recvfrom(sock, buffer, MAX_PACKET_SIZE + 1, 0, (struct sockaddr *)&addr, &addrLen);
 
                 if (numBytes == -1)
                 {
