@@ -183,9 +183,17 @@ void blockwise_free_large_buffer(large_buffer_t * large_buffer);
 struct _handle_result_ handle_dm_request(lwm2m_context_t * contextP, lwm2m_uri_t * uriP, void * fromSessionH, coap_packet_t * message, coap_packet_t * response);
 
 // defined in observe.c
+
+#ifdef LWM2M_CLIENT_MODE
+lwm2m_server_t * context_findServer(lwm2m_context_t * contextP, void * fromSessionH);
 coap_status_t handle_observe_request(lwm2m_context_t * contextP, lwm2m_uri_t * uriP, void * fromSessionH, coap_packet_t * message, coap_packet_t * response);
 void cancel_observe(lwm2m_context_t * contextP, int32_t mid, void * fromSessionH);
-time_t lwm2m_notify(lwm2m_context_t * contextP, struct timeval * tv);
+time_t notify_timed_observes(lwm2m_context_t * contextP, struct timeval * tv);
+#endif
+#ifdef LWM2M_SERVER_MODE
+lwm2m_client_t * context_findClient(lwm2m_context_t * contextP, void * fromSessionH);
+#endif
+uint16_t* context_getBlocksize(lwm2m_context_t * contextP, void * fromSessionH);
 
 // defined in registration.c
 coap_status_t handle_registration_request(lwm2m_context_t * contextP, lwm2m_uri_t * uriP, void * fromSessionH, coap_packet_t * message, coap_packet_t * response);

@@ -117,7 +117,7 @@ static void prv_unlinkObserved(lwm2m_context_t * contextP,
     }
 }
 
-static lwm2m_server_t * prv_findServer(lwm2m_context_t * contextP,
+lwm2m_server_t * context_findServer(lwm2m_context_t * contextP,
                                        void * fromSessionH)
 {
     lwm2m_server_t * targetP;
@@ -130,6 +130,18 @@ static lwm2m_server_t * prv_findServer(lwm2m_context_t * contextP,
     }
 
     return targetP;
+}
+
+uint16_t* context_getServerBlocksize(lwm2m_context_t * contextP,
+                                       void * fromSessionH)
+{
+    lwm2m_server_t * server = context_findServer(contextP, fromSessionH);
+    if (NULL == server) {
+        return NULL;
+    }
+    else {
+        return &(server->blocksize);
+    }
 }
 
 static lwm2m_watcher_t * prv_findWatcher(lwm2m_observed_t * observedP,
@@ -162,7 +174,7 @@ coap_status_t handle_observe_request(lwm2m_context_t * contextP,
     if (!LWM2M_URI_IS_SET_INSTANCE(uriP) && LWM2M_URI_IS_SET_RESOURCE(uriP)) return COAP_400_BAD_REQUEST;
     if (message->token_len == 0) return COAP_400_BAD_REQUEST;
 
-    serverP = prv_findServer(contextP, fromSessionH);
+    serverP = context_findServer(contextP, fromSessionH);
     if (serverP == NULL) return COAP_401_UNAUTHORIZED ;
     if (serverP->status != STATE_REGISTERED && serverP->status != STATE_REG_UPDATE_PENDING) return COAP_401_UNAUTHORIZED ;
 
@@ -295,7 +307,7 @@ coap_status_t lwm2m_sendNotification(lwm2m_context_t * contextP, lwm2m_watcher_t
   return result;
 }
 
-time_t lwm2m_notify(lwm2m_context_t * contextP, struct timeval * tv) {
+time_t notify_timed_observes(lwm2m_context_t * contextP, struct timeval * tv) {
     lwm2m_observed_t * observedP;
     time_t nextTransmission = 0;
 
@@ -400,6 +412,34 @@ void lwm2m_resource_value_changed(lwm2m_context_t * contextP,
 #endif
 
 #ifdef LWM2M_SERVER_MODE
+
+lwm2m_client_t * context_findClient(lwm2m_context_t * contextP,
+                                       void * fromSessionH)
+{
+    lwm2m_client_t * targetP;
+
+    targetP = contextP->clientList;
+    while (targetP != NULL
+        && targetP->sessionH != fromSessionH)
+    {
+        targetP = targetP->next;
+    }
+
+    return targetP;
+}
+
+uint16_t* context_getClientBlocksize(lwm2m_context_t * contextP,
+                                       void * fromSessionH)
+{
+    lwm2m_client_t * client = context_findClient(contextP, fromSessionH);
+    if (NULL == client) {
+        return NULL;
+    }
+    else {
+        return &(client->blocksize);
+    }
+}
+
 static lwm2m_observation_t * prv_findObservationByURI(lwm2m_client_t * clientP,
         lwm2m_uri_t * uriP)
 {
@@ -641,3 +681,13 @@ error:
     }
 }
 #endif
+
+uint16_t* context_getBlocksize(lwm2m_context_t * contextP,
+                                       void * fromSessionH)
+{
+#ifdef LWM2M_CLIENT_MODE
+    return context_getServerBlocksize(contextP, fromSessionH);
+#elif LWM2M_SERVERT_MODE
+    return context_getClientBlocksize(contextP, fromSessionH);
+#endif
+}

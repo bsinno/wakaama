@@ -267,7 +267,7 @@ int lwm2m_step(lwm2m_context_t * contextP,
     lwm2m_update_registrations(contextP, tv.tv_sec, timeoutP);
 
     // handle the notification from observed objects,instances, resources
-    lwm2m_adjustTimeout(lwm2m_notify(contextP, &tv), tv.tv_sec, timeoutP);
+    lwm2m_adjustTimeout(notify_timed_observes(contextP, &tv), tv.tv_sec, timeoutP);
 #endif
 
 #ifdef LWM2M_SERVER_MODE
