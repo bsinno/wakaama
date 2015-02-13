@@ -110,13 +110,14 @@ static struct _handle_result_ prv_handle_request(lwm2m_context_t * contextP, voi
     uint32_t block_offset = 0;
     lwm2m_blockwise_t * blockwiseIn = NULL;
     lwm2m_blockwise_t * blockwiseOut = NULL;
+    uint16_t* preferredBlocksize = context_getBlocksize(contextP, fromSessionH);
 
     if (coap_get_header_block1(message, &block_num, &block_more, &block_size, &block_offset))
     {
+        // blockwise request transfer
         LOG("Blockwise: request %u (%u/%u) @ %u bytes\n", block_num, block_size, REST_MAX_CHUNK_SIZE,
                 block_offset);
         block_size = MIN(block_size, REST_MAX_CHUNK_SIZE);
-        coap_set_header_block1(response, block_num, block_more, block_size);
 
         blockwiseIn = blockwise_get(contextP, fromSessionH, message->code, uriP);
         if (NULL == blockwiseIn) {
@@ -136,22 +137,56 @@ static struct _handle_result_ prv_handle_request(lwm2m_context_t * contextP, voi
         else {
             result.responseCode = blockwise_append(blockwiseIn, block_offset, message);
         }
-        if (block_more && NO_ERROR == result.responseCode) {
-            result.responseCode = COAP_231_CONTINUE;
-        }
-    }
 
-    if (NO_ERROR != result.responseCode) {
+        // TODO: check content format
+
+        if (block_more) {
+            if (NO_ERROR == result.responseCode) {
+                result.responseCode = COAP_231_CONTINUE;
+            }
+            else {
+                // reset block_more to signal final response code
+                block_more = 0;
+            }
+        }
+        coap_set_header_block1(response, block_num, block_more, block_size);
+        if (NO_ERROR != result.responseCode) {
+            // response to fetch the next blockwise block
+            return result;
+        }
+        // blockwise request transfer finished => now process
+    }
+    else if (REST_MAX_CHUNK_SIZE < message->payload_len) {
+        // report error include the preferred packet size as block1
+        result.responseCode = COAP_413_ENTITY_TOO_LARGE;
+        coap_set_header_block1(response, 0, 0, REST_MAX_CHUNK_SIZE);
         return result;
     }
 
     /* get offset for blockwise transfers */
-    block_size = REST_MAX_CHUNK_SIZE;
     if (coap_get_header_block2(message, &block_num, NULL, &block_size, &block_offset))
     {
         LOG("Blockwise: response %u (%u/%u) @ %u bytes\n", block_num, block_size, REST_MAX_CHUNK_SIZE,
                 block_offset);
-        block_size = MIN(block_size, REST_MAX_CHUNK_SIZE);
+        if (NULL != preferredBlocksize) {
+            *preferredBlocksize = block_size;
+        }
+        if (REST_MAX_CHUNK_SIZE < block_size) {
+            if (0 ==  block_num) {
+                block_size = REST_MAX_CHUNK_SIZE;
+            }
+            else {
+                // TODO: changing blocksize within transfer?
+            }
+        }
+    }
+    else {
+        if (NULL == preferredBlocksize) {
+            block_size = REST_MAX_CHUNK_SIZE;
+        }
+        else {
+            block_size = MIN(*preferredBlocksize, REST_MAX_CHUNK_SIZE);
+        }
     }
 
     /* observe requests (GET/OPTION(OBSERVE) have side effects and therefore must be always handled */
@@ -196,12 +231,14 @@ static struct _handle_result_ prv_handle_request(lwm2m_context_t * contextP, voi
 
         if (result.responseCode < BAD_REQUEST_4_00 && block_size < response->payload_len)
         {
+            // response payload too large, save it as blockwise data
             blockwiseOut = blockwise_new(contextP, NULL, message->code, uriP, response, false, 0);
             if (NULL == blockwiseOut)
             {
                 result.responseCode = INTERNAL_SERVER_ERROR_5_00;
             }
             else {
+                // do not free payload, it will be freed after the blockwise data is not longer requested
                 result.freePayload = 0;
             }
         }
@@ -210,12 +247,10 @@ static struct _handle_result_ prv_handle_request(lwm2m_context_t * contextP, voi
         result.responseCode = COAP_205_CONTENT;
     }
 
-    if (result.responseCode < BAD_REQUEST_4_00)
+    if (result.responseCode < BAD_REQUEST_4_00 && NULL != blockwiseOut)
     {
-        if (NULL != blockwiseOut)
-        {
-            blockwise_prepare(blockwiseOut, block_num, block_size, response);
-        }
+        // sent payload blockwise
+        blockwise_prepare(blockwiseOut, block_num, block_size, response);
     }
 
     return result;
@@ -268,16 +303,13 @@ void lwm2m_handle_packet(lwm2m_context_t * contextP,
             else {
                 result = prv_handle_request(contextP, fromSessionH, uriP, message, response);
             }
-            if (result.responseCode < BAD_REQUEST_4_00)
-            {
-                coap_set_status_code(response, result.responseCode);
-                result.responseCode = message_send(contextP, response, fromSessionH);
+            coap_set_status_code(response, result.responseCode);
+            result.responseCode = message_send(contextP, response, fromSessionH);
 #ifdef LWM2M_CLIENT_MODE
-                if (result.valueChanged) {
-                    lwm2m_resource_value_changed(contextP, uriP);
-                }
-#endif
+            if (result.valueChanged) {
+                lwm2m_resource_value_changed(contextP, uriP);
             }
+#endif
             if (result.freePayload) {
                 lwm2m_free(response->payload);
             }
