@@ -48,6 +48,9 @@
  *  When for COAP_DEFAULT_MAX_AGE no request with the uri for that resource is received,
  *  the data is freed (see blockwise_free).
  *
+ *  Known limitations:
+ *  13.02.2015 Content type is currently not supported.
+ *
  ********************************************************************************/
 
 #include <stdlib.h>
@@ -279,7 +282,7 @@ void blockwise_free(lwm2m_context_t * contextP, uint32_t time)
     lwm2m_blockwise_t* prev = NULL;
     while (NULL != current)
     {
-        if ((time - current->time) >  COAP_DEFAULT_MAX_AGE * 2)
+        if ((time - current->time) >  COAP_DEFAULT_MAX_AGE)
         {
             lwm2m_blockwise_t* next = current->next;
             if (NULL == prev)
