@@ -203,6 +203,7 @@ static int prv_register(lwm2m_context_t * contextP, lwm2m_server_t * server, uin
 
         coap_set_header_uri_path(transaction->message, "/"URI_REGISTRATION_SEGMENT);
         coap_set_header_uri_query(transaction->message, query);
+        coap_set_header_block2(transaction->message, 0, 0, REST_MAX_CHUNK_SIZE);
 
         coap_set_payload(transaction->message, payload, payload_length);
 
@@ -836,6 +837,7 @@ coap_status_t handle_registration_request(lwm2m_context_t * contextP,
         clientP->objectList = objects;
         clientP->sessionH = fromSessionH;
         clientP->blocksize = REST_MAX_CHUNK_SIZE;
+        coap_get_header_block2(message, NULL, NULL, &clientP->blocksize, NULL);
 
         if (prv_getLocationString(clientP->internalID, location) == 0)
         {
@@ -899,6 +901,8 @@ coap_status_t handle_registration_request(lwm2m_context_t * contextP,
         }
         // client IP address, port or MSISDN may have changed
         clientP->sessionH = fromSessionH;
+
+        coap_get_header_block2(message, NULL, NULL, &clientP->blocksize, NULL);
 
         if (objects != NULL)
         {
