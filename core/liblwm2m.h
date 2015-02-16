@@ -91,6 +91,13 @@ void lwm2m_free(void *p);
 #define COAP_503_SERVICE_UNAVAILABLE    (uint8_t)0xA3
 #define COAP_505_PROXYING_NOT_SUPPORTED (uint8_t)0xA5
 
+
+#define ERROR_CHANGING_BLOCKSIZE            1
+#define ERROR_BLOCK1_IGNORED                2
+#define ERROR_OUT_OF_MEMORY                 3
+#define ERROR_RESPONSE_INCOMPLETE           4
+#define ERROR_RECEIVED_CHUNK_TOO_LARGE      5
+
 /*
  * Standard Object IDs
  */
@@ -492,8 +499,10 @@ struct _lwm2m_transaction_
     uint32_t              buffer_len;
     uint8_t *             buffer;
     uint16_t              blocksize;
-    large_buffer_t*       blockwise;
+    large_buffer_t*       blockwise1; // blockwise request
+    large_buffer_t*       blockwise2; // blockwise response
     uint32_t              observe;
+    uint8_t               error;      // error code processing transaction. e.g. indicates protocol violations of server during blockwise transfer
     lwm2m_transaction_callback_t callback;
     void *                userData;
 };

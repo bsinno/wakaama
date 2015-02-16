@@ -126,6 +126,26 @@ static int prv_check_addr(void * leftSessionH,
     return 1;
 }
 
+static void prv_adjust_blocksize(lwm2m_transaction_t * transacP, uint16_t blocksize)
+{
+    uint16_t* blocksizeP = NULL;
+    switch(transacP->peerType)
+    {
+        case ENDPOINT_CLIENT:
+            blocksizeP = &(((lwm2m_client_t*)transacP->peerP)->blocksize);
+            break;
+
+        case ENDPOINT_SERVER:
+            blocksizeP = &(((lwm2m_server_t*)transacP->peerP)->blocksize);
+            break;
+        case ENDPOINT_UNKNOWN:
+            break;
+    }
+    if (NULL != blocksizeP && *blocksizeP > blocksize) {
+        *blocksizeP = blocksize;
+    }
+}
+
 static int prv_transaction_check_finished(lwm2m_transaction_t * transacP,
         coap_packet_t * receivedMessage)
 {
@@ -163,28 +183,34 @@ static void prv_transaction_reset(lwm2m_transaction_t * transacP)
 
 static int prv_transaction_send_next_block(lwm2m_context_t * contextP, coap_packet_t * message, lwm2m_transaction_t * transacP)
 {
+    int result;
     uint8_t more = 0;
     uint32_t block_num = 0;
     uint32_t block_offset = 0;
     uint16_t block_size = REST_MAX_CHUNK_SIZE;
     coap_status_t code = message->code;
     coap_packet_t * transactionMessage = (coap_packet_t *) transacP->message;
-    large_buffer_t * blockwiseP = transacP->blockwise;
+    large_buffer_t * blockwiseP = transacP->blockwise1;
 
-    coap_get_header_block1(message, &block_num, &more, &block_size, &block_offset);
+    result = coap_get_header_block1(message, &block_num, &more, &block_size, &block_offset);
+
+    if (result) {
+        prv_adjust_blocksize(transacP, block_size);
+    }
 
     if (COAP_413_ENTITY_TOO_LARGE == code) {
-        if (0 == block_num && block_size < transacP->blocksize) {
-            if (NULL == transacP->blockwise) {
-                transacP->blockwise = blockwise_new_large_buffer(transactionMessage, transactionMessage->payload_len);
-                if (NULL == transacP->blockwise) {
+        if (result && 0 == block_num && block_size < transacP->blocksize) {
+            if (NULL == transacP->blockwise1) {
+                transacP->blockwise1 = blockwise_new_large_buffer(transactionMessage, transactionMessage->payload_len);
+                if (NULL == transacP->blockwise1) {
+                    // transaction must be finished with error COAP_413_ENTITY_TOO_LARGE
                     return 0;
                 }
             }
             more = 1;
             transacP->blocksize = block_size;
-            coap_set_header_size1(transactionMessage, transacP->blockwise->length);
-            coap_set_payload(transactionMessage, transacP->blockwise->buffer, block_size);
+            coap_set_header_size1(transactionMessage, transacP->blockwise1->length);
+            coap_set_payload(transactionMessage, transacP->blockwise1->buffer, block_size);
         }
         else {
             // transaction must be finished with error COAP_413_ENTITY_TOO_LARGE
@@ -192,20 +218,25 @@ static int prv_transaction_send_next_block(lwm2m_context_t * contextP, coap_pack
         }
     }
     else if (NULL == blockwiseP) {
-        // no blockwise transfer
+        // no blockwise transfer, just adjust the preferred block size
+        return 0;
+    }
+    else if (0 == result) {
+        // no block1 option in response
+        transacP->error = ERROR_BLOCK1_IGNORED;
         return 0;
     }
     else {
         if (block_size < transacP->blocksize) {
             // adjust block_num & block_offset
             uint16_t oldSize;
-            if ((0 == block_num) && coap_get_header_block1(message, NULL, NULL, &oldSize, NULL)) {
+            if ((0 == block_num) && coap_get_header_block1(transactionMessage, NULL, NULL, &oldSize, NULL)) {
                 block_offset = oldSize;
                 transacP->blocksize = block_size;
                 block_num = oldSize / block_size;
             }
             else {
-                // TODO: Client error ?
+                transacP->error = ERROR_CHANGING_BLOCKSIZE;
                 return 0;
             }
         }
@@ -222,7 +253,7 @@ static int prv_transaction_send_next_block(lwm2m_context_t * contextP, coap_pack
             coap_set_payload(transactionMessage, blockwiseP->buffer + block_offset, length);
         }
         else {
-            // transfer finished.
+            // transfer finished. process response.
             return 0;
         }
     }
@@ -241,31 +272,36 @@ static int prv_transaction_request_next_block(lwm2m_context_t * contextP, coap_p
     uint32_t block_num = 0;
     uint32_t block_offset = 0;
     uint16_t block_size = REST_MAX_CHUNK_SIZE;
-    coap_status_t code = message->code;
-    large_buffer_t * blockwiseP = (large_buffer_t *) transacP->blockwise;
+    large_buffer_t * blockwiseP = (large_buffer_t *) transacP->blockwise2;
 
     coap_get_header_size2(message, &resource_size);
     coap_get_header_block2(message, &block_num, &more, &block_size, &block_offset);
     LOG("Blockwise: response %u (%u/%u) %s @ %u bytes\n", block_num, block_size, REST_MAX_CHUNK_SIZE,
                 more ? "more..." : "last", block_offset);
-    block_size = MIN(block_size, REST_MAX_CHUNK_SIZE);
+
+    prv_adjust_blocksize(transacP, block_size);
 
     if (NULL == blockwiseP) {
         blockwiseP = blockwise_new_large_buffer(message, resource_size);
         if (NULL == blockwiseP) {
-            code = COAP_500_INTERNAL_SERVER_ERROR;
+            transacP->error = ERROR_OUT_OF_MEMORY;
         }
         else {
-            transacP->blockwise = blockwiseP;
+            transacP->blockwise2 = blockwiseP;
         }
     }
     else {
-        coap_status_t appendResult = blockwise_append_large_buffer(blockwiseP, block_offset, message);
-        if (COAP_400_BAD_REQUEST <= appendResult) {
-            code = appendResult;
+        int appendResult = blockwise_append_large_buffer(blockwiseP, block_offset, message);
+        switch(appendResult) {
+        case COAP_408_ENTITY_INCOMPLETE :
+            transacP->error = ERROR_RESPONSE_INCOMPLETE;
+            break;
+        case COAP_413_ENTITY_TOO_LARGE :
+            transacP->error = ERROR_OUT_OF_MEMORY;
+            break;
         }
     }
-    if (more && COAP_400_BAD_REQUEST > code) {
+    if (more && transacP->error == NO_ERROR && COAP_400_BAD_REQUEST > message->code) {
         coap_packet_t * transactionMessage = (coap_packet_t *) transacP->message;
         if (coap_get_header_observe(message, &(transacP->observe))) {
             // save observe option
@@ -277,7 +313,7 @@ static int prv_transaction_request_next_block(lwm2m_context_t * contextP, coap_p
         transactionMessage->payload_len = 0;
         RESET_OPTION(transactionMessage, COAP_OPTION_OBSERVE);
         // on request the more bit in option2 must be zero
-        coap_set_header_block2(transactionMessage, block_num + 1, 0, block_size);
+        coap_set_header_block2(transactionMessage, block_num + 1, 0, MIN(block_size, REST_MAX_CHUNK_SIZE));
         prv_transaction_reset(transacP);
         transaction_send(contextP, transacP);
         return 1;
@@ -286,7 +322,6 @@ static int prv_transaction_request_next_block(lwm2m_context_t * contextP, coap_p
         // set accumulated payload for callback
         message->payload = blockwiseP->buffer;
         message->payload_len = blockwiseP->length;
-        message->code = code;
     }
     return 0;
 }
@@ -410,8 +445,11 @@ void transaction_free(lwm2m_transaction_t * transacP)
     if (transacP->buffer) {
         lwm2m_free(transacP->buffer);
     }
-    if (transacP->blockwise) {
-        blockwise_free_large_buffer(transacP->blockwise);
+    if (transacP->blockwise1) {
+        blockwise_free_large_buffer(transacP->blockwise1);
+    }
+    if (transacP->blockwise2) {
+        blockwise_free_large_buffer(transacP->blockwise2);
     }
     lwm2m_free(transacP);
 }
@@ -458,17 +496,17 @@ void transaction_handle_response(lwm2m_context_t * contextP,
         targetSessionH = NULL;
         switch (transacP->peerType)
         {
-    #ifdef LWM2M_SERVER_MODE
+#ifdef LWM2M_SERVER_MODE
         case ENDPOINT_CLIENT:
             targetSessionH = ((lwm2m_client_t *)transacP->peerP)->sessionH;
             break;
-    #endif
+#endif
 
-    #ifdef LWM2M_CLIENT_MODE
+#ifdef LWM2M_CLIENT_MODE
         case ENDPOINT_SERVER:
             targetSessionH = ((lwm2m_server_t *)transacP->peerP)->sessionH;
             break;
-    #endif
+#endif
 
         default:
             break;
@@ -492,7 +530,7 @@ void transaction_handle_response(lwm2m_context_t * contextP,
                 size_t messageDataLength =  message->payload_len;
                 coap_status_t code = message->code;
 
-                if (IS_OPTION(message, COAP_OPTION_BLOCK1)) {
+                if (IS_OPTION(message, COAP_OPTION_BLOCK1) || IS_OPTION((coap_packet_t*)transacP->message, COAP_OPTION_BLOCK1)) {
                     if ((COAP_400_BAD_REQUEST > code) || (COAP_413_ENTITY_TOO_LARGE == code)) {
                         if (prv_transaction_send_next_block(contextP, message, transacP))
                             return;
@@ -509,15 +547,17 @@ void transaction_handle_response(lwm2m_context_t * contextP,
                     return;
                 }
 
-                if ((COAP_400_BAD_REQUEST > code) && IS_OPTION(message, COAP_OPTION_BLOCK2)) {
+                if (REST_MAX_CHUNK_SIZE < message->payload_len) {
+                    transacP->error = ERROR_RECEIVED_CHUNK_TOO_LARGE;
+                }
+                else if ((COAP_400_BAD_REQUEST > code) && IS_OPTION(message, COAP_OPTION_BLOCK2)) {
                     if (prv_transaction_request_next_block(contextP, message, transacP))
                         return;
-                    if (COAP_400_BAD_REQUEST <= code)
-                        message = NULL; // can't read it, not enough memory!
                 }
+
                 if (transacP->callback != NULL)
                 {
-                    if (NULL != message && !IS_OPTION(message, COAP_OPTION_OBSERVE) && (transacP->observe & TRANSACTION_OBSERVE_OPTION)) {
+                    if (!IS_OPTION(message, COAP_OPTION_OBSERVE) && (transacP->observe & TRANSACTION_OBSERVE_OPTION)) {
                         // restore observe option
                         transacP->observe &= ~TRANSACTION_OBSERVE_OPTION;
                         LOG("Blockwise: restore observe %lu\n", (long unsigned) transacP->observe);
@@ -526,11 +566,9 @@ void transaction_handle_response(lwm2m_context_t * contextP,
                     transacP->callback(transacP, message);
                 }
                 transaction_remove(contextP, transacP);
-                if (NULL != message) {
-                    // restore old payload
-                    message->payload = messageData;
-                    message->payload_len = messageDataLength;
-                }
+                // restore old payload
+                message->payload = messageData;
+                message->payload_len = messageDataLength;
                 return;
             }
             // if we found our guy, exit
@@ -565,9 +603,10 @@ int transaction_send(lwm2m_context_t * contextP,
         coap_packet_t* message = (coap_packet_t*) transacP->message;
 
         if (block_size < message->payload_len) {
-            if (NULL == transacP->blockwise) {
-                transacP->blockwise = blockwise_new_large_buffer(message, message->payload_len);
-                if (NULL == transacP->blockwise) {
+            if (NULL == transacP->blockwise1) {
+                transacP->blockwise1 = blockwise_new_large_buffer(message, message->payload_len);
+                if (NULL == transacP->blockwise1) {
+                    transacP->error = ERROR_OUT_OF_MEMORY;
                     return COAP_500_INTERNAL_SERVER_ERROR;
                 }
                 else {
@@ -582,7 +621,10 @@ int transaction_send(lwm2m_context_t * contextP,
         if (length <= 0) return COAP_500_INTERNAL_SERVER_ERROR;
 
         transacP->buffer = (uint8_t*)lwm2m_malloc(length);
-        if (transacP->buffer == NULL) return COAP_500_INTERNAL_SERVER_ERROR;
+        if (transacP->buffer == NULL) {
+            transacP->error = ERROR_OUT_OF_MEMORY;
+            return COAP_500_INTERNAL_SERVER_ERROR;
+        }
 
         memcpy(transacP->buffer, tempBuffer, length);
         transacP->buffer_len = length;
