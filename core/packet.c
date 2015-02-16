@@ -100,6 +100,22 @@ static void prv_handle_reset(lwm2m_context_t * contextP,
 #endif
 }
 
+static uint16_t prv_adjust_blocksize(uint16_t* preferredBlocksize, uint16_t blocksize)
+{
+    if (NULL != preferredBlocksize) {
+        if (blocksize < *preferredBlocksize) {
+            *preferredBlocksize = blocksize;
+        }
+        else {
+            blocksize = *preferredBlocksize;
+        }
+        return blocksize;
+    }
+    else {
+        return MIN(REST_MAX_CHUNK_SIZE, blocksize);
+    }
+}
+
 static struct _handle_result_ prv_handle_request(lwm2m_context_t * contextP, void * fromSessionH,
         lwm2m_uri_t * uriP, coap_packet_t * message, coap_packet_t * response)
 {
@@ -117,7 +133,7 @@ static struct _handle_result_ prv_handle_request(lwm2m_context_t * contextP, voi
         // blockwise request transfer
         LOG("Blockwise: request %u (%u/%u) @ %u bytes\n", block_num, block_size, REST_MAX_CHUNK_SIZE,
                 block_offset);
-        block_size = MIN(block_size, REST_MAX_CHUNK_SIZE);
+        block_size = prv_adjust_blocksize(preferredBlocksize, block_size);
 
         blockwiseIn = blockwise_get(contextP, fromSessionH, message->code, uriP);
         if (NULL == blockwiseIn) {
@@ -159,35 +175,18 @@ static struct _handle_result_ prv_handle_request(lwm2m_context_t * contextP, voi
     else if (REST_MAX_CHUNK_SIZE < message->payload_len) {
         // report error include the preferred packet size as block1
         result.responseCode = COAP_413_ENTITY_TOO_LARGE;
-        coap_set_header_block1(response, 0, 0, REST_MAX_CHUNK_SIZE);
+//        coap_set_header_block1(response, 0, 0, REST_MAX_CHUNK_SIZE);
         return result;
     }
 
+    block_size = REST_MAX_CHUNK_SIZE;
     /* get offset for blockwise transfers */
     if (coap_get_header_block2(message, &block_num, NULL, &block_size, &block_offset))
     {
         LOG("Blockwise: response %u (%u/%u) @ %u bytes\n", block_num, block_size, REST_MAX_CHUNK_SIZE,
                 block_offset);
-        if (NULL != preferredBlocksize) {
-            *preferredBlocksize = block_size;
-        }
-        if (REST_MAX_CHUNK_SIZE < block_size) {
-            if (0 ==  block_num) {
-                block_size = REST_MAX_CHUNK_SIZE;
-            }
-            else {
-                // TODO: changing blocksize within transfer?
-            }
-        }
     }
-    else {
-        if (NULL == preferredBlocksize) {
-            block_size = REST_MAX_CHUNK_SIZE;
-        }
-        else {
-            block_size = MIN(*preferredBlocksize, REST_MAX_CHUNK_SIZE);
-        }
-    }
+    block_size = prv_adjust_blocksize(preferredBlocksize, block_size);
 
     /* observe requests (GET/OPTION(OBSERVE) have side effects and therefore must be always handled */
     if (0 < block_num || message->code != COAP_GET || !IS_OPTION(message, COAP_OPTION_OBSERVE))
