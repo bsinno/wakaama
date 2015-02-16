@@ -687,7 +687,7 @@ uint16_t* context_getBlocksize(lwm2m_context_t * contextP,
 {
 #ifdef LWM2M_CLIENT_MODE
     return context_getServerBlocksize(contextP, fromSessionH);
-#elif LWM2M_SERVERT_MODE
+#elif LWM2M_SERVER_MODE
     return context_getClientBlocksize(contextP, fromSessionH);
 #endif
 }
