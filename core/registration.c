@@ -765,6 +765,7 @@ coap_status_t handle_registration_request(lwm2m_context_t * contextP,
 {
     coap_status_t result;
     struct timeval tv;
+    uint16_t blocksize = REST_MAX_CHUNK_SIZE;
 
     if (lwm2m_gettimeofday(&tv, NULL) != 0)
     {
@@ -837,7 +838,8 @@ coap_status_t handle_registration_request(lwm2m_context_t * contextP,
         clientP->objectList = objects;
         clientP->sessionH = fromSessionH;
         clientP->blocksize = REST_MAX_CHUNK_SIZE;
-        coap_get_header_block2(message, NULL, NULL, &clientP->blocksize, NULL);
+        coap_get_header_block2(message, NULL, NULL, &blocksize, NULL);
+        clientP->blocksize = MIN(blocksize, clientP->blocksize);
 
         if (prv_getLocationString(clientP->internalID, location) == 0)
         {
@@ -902,7 +904,8 @@ coap_status_t handle_registration_request(lwm2m_context_t * contextP,
         // client IP address, port or MSISDN may have changed
         clientP->sessionH = fromSessionH;
 
-        coap_get_header_block2(message, NULL, NULL, &clientP->blocksize, NULL);
+        coap_get_header_block2(message, NULL, NULL, &blocksize, NULL);
+        clientP->blocksize = MIN(blocksize, clientP->blocksize);
 
         if (objects != NULL)
         {
