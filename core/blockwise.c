@@ -50,6 +50,7 @@
  *
  *  Known limitations:
  *  13.02.2015 Content type is currently not supported.
+ *  17.02.2015 Changing the blocksize seems not to work with californium/leshan
  *
  ********************************************************************************/
 
