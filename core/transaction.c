@@ -174,8 +174,7 @@ static int prv_transaction_check_finished(lwm2m_transaction_t * transacP,
 
 static void prv_transaction_reset(lwm2m_transaction_t * transacP)
 {
-    lwm2m_free(transacP->buffer);
-    transacP->buffer = NULL;
+    transacP->buffer_len = 0;
     transacP->ack_received = 0;
     transacP->mID = ((coap_packet_t*) transacP->message)->mid;
     transacP->retrans_counter = 0;
@@ -595,7 +594,7 @@ void transaction_handle_response(lwm2m_context_t * contextP,
 int transaction_send(lwm2m_context_t * contextP,
                      lwm2m_transaction_t * transacP)
 {
-    if (transacP->buffer == NULL)
+    if (NULL == transacP->buffer || 0 == transacP->buffer_len)
     {
         uint8_t tempBuffer[LWM2M_MAX_PACKET_SIZE];
         int length;
@@ -620,10 +619,18 @@ int transaction_send(lwm2m_context_t * contextP,
         length = coap_serialize_message(message, tempBuffer);
         if (length <= 0) return COAP_500_INTERNAL_SERVER_ERROR;
 
+        if (NULL != transacP->buffer && length > transacP->buffer_size) {
+            // old buffer too small
+            lwm2m_free(transacP->buffer);
+        }
+
+        if (NULL == transacP->buffer) {
         transacP->buffer = (uint8_t*)lwm2m_malloc(length);
         if (transacP->buffer == NULL) {
             transacP->error = ERROR_OUT_OF_MEMORY;
             return COAP_500_INTERNAL_SERVER_ERROR;
+        }
+            transacP->buffer_size = length;
         }
 
         memcpy(transacP->buffer, tempBuffer, length);

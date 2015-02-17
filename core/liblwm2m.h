@@ -497,6 +497,7 @@ struct _lwm2m_transaction_
     char                  resourceStringID[LWM2M_STRING_ID_MAX_LEN];
     void *                message;
     uint32_t              buffer_len;
+    uint32_t              buffer_size;
     uint8_t *             buffer;
     uint16_t              blocksize;
     large_buffer_t*       blockwise1; // blockwise request
