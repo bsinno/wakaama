@@ -126,7 +126,7 @@ static int prv_check_addr(void * leftSessionH,
     return 1;
 }
 
-static void prv_adjust_blocksize(lwm2m_transaction_t * transacP, uint16_t blocksize)
+static uint16_t prv_adjust_blocksize(lwm2m_transaction_t * transacP, uint16_t blocksize, int result)
 {
     uint16_t* blocksizeP = NULL;
     switch(transacP->peerType)
@@ -141,9 +141,21 @@ static void prv_adjust_blocksize(lwm2m_transaction_t * transacP, uint16_t blocks
         case ENDPOINT_UNKNOWN:
             break;
     }
-    if (NULL != blocksizeP && *blocksizeP > blocksize) {
-        *blocksizeP = blocksize;
+    if (result) {
+        blocksize = MIN(REST_MAX_CHUNK_SIZE, blocksize);
+        if (NULL != blocksizeP) {
+            *blocksizeP = blocksize;
+        }
     }
+    else {
+        if (NULL != blocksizeP) {
+            blocksize = *blocksizeP;
+        }
+        else {
+            blocksize = REST_MAX_CHUNK_SIZE;
+        }
+    }
+    return blocksize;
 }
 
 static int prv_transaction_check_finished(lwm2m_transaction_t * transacP,
@@ -193,9 +205,7 @@ static int prv_transaction_send_next_block(lwm2m_context_t * contextP, coap_pack
 
     result = coap_get_header_block1(message, &block_num, &more, &block_size, &block_offset);
 
-    if (result) {
-        prv_adjust_blocksize(transacP, block_size);
-    }
+    block_size = prv_adjust_blocksize(transacP, block_size, result);
 
     if (COAP_413_ENTITY_TOO_LARGE == code) {
         if (result && 0 == block_num && block_size < transacP->blocksize) {
@@ -266,6 +276,7 @@ static int prv_transaction_send_next_block(lwm2m_context_t * contextP, coap_pack
 
 static int prv_transaction_request_next_block(lwm2m_context_t * contextP, coap_packet_t * message, lwm2m_transaction_t * transacP)
 {
+    int result;
     uint8_t more = 0;
     uint32_t resource_size = 0;
     uint32_t block_num = 0;
@@ -274,11 +285,11 @@ static int prv_transaction_request_next_block(lwm2m_context_t * contextP, coap_p
     large_buffer_t * blockwiseP = (large_buffer_t *) transacP->blockwise2;
 
     coap_get_header_size2(message, &resource_size);
-    coap_get_header_block2(message, &block_num, &more, &block_size, &block_offset);
-    LOG("Blockwise: response %u (%u/%u) %s @ %u bytes\n", block_num, block_size, REST_MAX_CHUNK_SIZE,
-                more ? "more..." : "last", block_offset);
 
-    prv_adjust_blocksize(transacP, block_size);
+    result = coap_get_header_block2(message, &block_num, &more, &block_size, &block_offset);
+    block_size = prv_adjust_blocksize(transacP, block_size, result);
+
+    LOG("Blockwise: response %u %u %s @ %u bytes\n", block_num, block_size, more ? "more..." : "last", block_offset);
 
     if (NULL == blockwiseP) {
         blockwiseP = blockwise_new_large_buffer(message, resource_size);
@@ -312,7 +323,7 @@ static int prv_transaction_request_next_block(lwm2m_context_t * contextP, coap_p
         transactionMessage->payload_len = 0;
         RESET_OPTION(transactionMessage, COAP_OPTION_OBSERVE);
         // on request the more bit in option2 must be zero
-        coap_set_header_block2(transactionMessage, block_num + 1, 0, MIN(block_size, REST_MAX_CHUNK_SIZE));
+        coap_set_header_block2(transactionMessage, block_num + 1, 0, block_size);
         prv_transaction_reset(transacP);
         transaction_send(contextP, transacP);
         return 1;
@@ -625,11 +636,11 @@ int transaction_send(lwm2m_context_t * contextP,
         }
 
         if (NULL == transacP->buffer) {
-        transacP->buffer = (uint8_t*)lwm2m_malloc(length);
-        if (transacP->buffer == NULL) {
-            transacP->error = ERROR_OUT_OF_MEMORY;
-            return COAP_500_INTERNAL_SERVER_ERROR;
-        }
+            transacP->buffer = (uint8_t*)lwm2m_malloc(length);
+            if (transacP->buffer == NULL) {
+                transacP->error = ERROR_OUT_OF_MEMORY;
+                return COAP_500_INTERNAL_SERVER_ERROR;
+            }
             transacP->buffer_size = length;
         }
 

@@ -837,9 +837,8 @@ coap_status_t handle_registration_request(lwm2m_context_t * contextP,
         clientP->endOfLife = tv.tv_sec + lifetime;
         clientP->objectList = objects;
         clientP->sessionH = fromSessionH;
-        clientP->blocksize = REST_MAX_CHUNK_SIZE;
         coap_get_header_block2(message, NULL, NULL, &blocksize, NULL);
-        clientP->blocksize = MIN(blocksize, clientP->blocksize);
+        clientP->blocksize = MIN(blocksize, REST_MAX_CHUNK_SIZE);
 
         if (prv_getLocationString(clientP->internalID, location) == 0)
         {
@@ -904,8 +903,9 @@ coap_status_t handle_registration_request(lwm2m_context_t * contextP,
         // client IP address, port or MSISDN may have changed
         clientP->sessionH = fromSessionH;
 
-        coap_get_header_block2(message, NULL, NULL, &blocksize, NULL);
-        clientP->blocksize = MIN(blocksize, clientP->blocksize);
+        if (coap_get_header_block2(message, NULL, NULL, &blocksize, NULL)) {
+            clientP->blocksize = MIN(blocksize, REST_MAX_CHUNK_SIZE);
+        }
 
         if (objects != NULL)
         {

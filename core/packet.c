@@ -102,18 +102,11 @@ static void prv_handle_reset(lwm2m_context_t * contextP,
 
 static uint16_t prv_adjust_blocksize(uint16_t* preferredBlocksize, uint16_t blocksize)
 {
+    blocksize = MIN(REST_MAX_CHUNK_SIZE, blocksize);
     if (NULL != preferredBlocksize) {
-        if (blocksize < *preferredBlocksize) {
-            *preferredBlocksize = blocksize;
-        }
-        else {
-            blocksize = *preferredBlocksize;
-        }
-        return blocksize;
+        *preferredBlocksize = blocksize;
     }
-    else {
-        return MIN(REST_MAX_CHUNK_SIZE, blocksize);
-    }
+    return blocksize;
 }
 
 static struct _handle_result_ prv_handle_request(lwm2m_context_t * contextP, void * fromSessionH,
@@ -128,12 +121,20 @@ static struct _handle_result_ prv_handle_request(lwm2m_context_t * contextP, voi
     lwm2m_blockwise_t * blockwiseOut = NULL;
     uint16_t* preferredBlocksize = context_getBlocksize(contextP, fromSessionH);
 
+
     if (coap_get_header_block1(message, &block_num, &block_more, &block_size, &block_offset))
     {
         // blockwise request transfer
-        LOG("Blockwise: request %u (%u/%u) @ %u bytes\n", block_num, block_size, REST_MAX_CHUNK_SIZE,
-                block_offset);
+        LOG("Blockwise: request %u %u @ %u bytes\n", block_num, block_size, block_offset);
+
         block_size = prv_adjust_blocksize(preferredBlocksize, block_size);
+
+        if (block_size < message->payload_len) {
+            // report error include the preferred packet size as block1
+            result.responseCode = COAP_413_ENTITY_TOO_LARGE;
+            coap_set_header_block1(response, 0, 0, block_size);
+            return result;
+        }
 
         blockwiseIn = blockwise_get(contextP, fromSessionH, message->code, uriP);
         if (NULL == blockwiseIn) {
@@ -185,8 +186,11 @@ static struct _handle_result_ prv_handle_request(lwm2m_context_t * contextP, voi
     {
         LOG("Blockwise: response %u (%u/%u) @ %u bytes\n", block_num, block_size, REST_MAX_CHUNK_SIZE,
                 block_offset);
+        block_size = prv_adjust_blocksize(preferredBlocksize, block_size);
     }
-    block_size = prv_adjust_blocksize(preferredBlocksize, block_size);
+    else if (NULL != preferredBlocksize) {
+        block_size = *preferredBlocksize;
+    }
 
     /* observe requests (GET/OPTION(OBSERVE) have side effects and therefore must be always handled */
     if (0 < block_num || message->code != COAP_GET || !IS_OPTION(message, COAP_OPTION_OBSERVE))
