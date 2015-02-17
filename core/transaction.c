@@ -99,6 +99,9 @@ Contains code snippets which are:
  *  - NON with token => regular finished with response containing the token.
  *  Responses (COAP_201_CREATED - ?):
  *  - CON with mid => regular finished with corresponding ACK.MID
+ *
+ *  For blockwise transfer the transaction is reused for either sending the next request block or to
+ *  ack the last response block.
  */
 
 #include "internals.h"
