@@ -259,7 +259,6 @@ static int prv_transaction_send_next_block(lwm2m_context_t * contextP, coap_pack
         if (block_offset < blockwiseP->length) {
             // next block
             uint16_t length = block_size;
-            RESET_OPTION(transactionMessage, COAP_OPTION_SIZE1);
             more = block_offset + block_size < blockwiseP->length;
             if (!more) length = blockwiseP->length - block_offset;
             coap_set_payload(transactionMessage, blockwiseP->buffer + block_offset, length);
@@ -324,6 +323,7 @@ static int prv_transaction_request_next_block(lwm2m_context_t * contextP, coap_p
         // request next block
         transactionMessage->mid = contextP->nextMID++;
         transactionMessage->payload_len = 0;
+        RESET_OPTION(transactionMessage, COAP_OPTION_BLOCK1);
         RESET_OPTION(transactionMessage, COAP_OPTION_OBSERVE);
         // on request the more bit in option2 must be zero
         coap_set_header_block2(transactionMessage, block_num + 1, 0, block_size);
