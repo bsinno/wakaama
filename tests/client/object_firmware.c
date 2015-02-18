@@ -253,7 +253,7 @@ lwm2m_object_t * get_object_firmware()
         }
         else
         {
-            free(firmwareObj);
+            lwm2m_free(firmwareObj);
             firmwareObj = NULL;
         }
     }
