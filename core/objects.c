@@ -223,7 +223,7 @@ coap_status_t object_read(lwm2m_context_t * contextP,
          && tlvP->type == LWM2M_TYPE_RESSOURCE
          && (tlvP->flags && LWM2M_TLV_FLAG_TEXT_FORMAT) != 0 )
         {
-            *bufferP = (char *)malloc(tlvP->length);
+            *bufferP = (char *)lwm2m_malloc(tlvP->length);
             if (*bufferP == NULL)
             {
                 result = COAP_500_INTERNAL_SERVER_ERROR;
@@ -671,7 +671,7 @@ int object_getServers(lwm2m_context_t * contextP)
 
         if (securityObjP->readFunc(securityInstP->id, &size, &tlvP, securityObjP) != COAP_205_CONTENT)
         {
-            lwm2m_free(tlvP);
+            lwm2m_tlv_free(size, tlvP);
             return -1;
         }
 
@@ -682,7 +682,7 @@ int object_getServers(lwm2m_context_t * contextP)
         if (0 == lwm2m_tlv_decode_bool(tlvP + 0, &isBootstrap))
         {
             lwm2m_free(targetP);
-            lwm2m_free(tlvP);
+            lwm2m_tlv_free(size, tlvP);
             return -1;
         }
 
@@ -690,7 +690,7 @@ int object_getServers(lwm2m_context_t * contextP)
          || value <= 0 || value >0xFFFF)                // 0 is forbidden as a Short Server ID
         {
             lwm2m_free(targetP);
-            lwm2m_free(tlvP);
+            lwm2m_tlv_free(size, tlvP);
             return -1;
         }
         targetP->shortID = value;
@@ -701,7 +701,7 @@ int object_getServers(lwm2m_context_t * contextP)
              || value < 0 || value >0xFFFFFFFF)             // This is an implementation limit
             {
                 lwm2m_free(targetP);
-                lwm2m_free(tlvP);
+                lwm2m_tlv_free(size, tlvP);
                 return -1;
             }
             targetP->lifetime = value;
@@ -716,20 +716,20 @@ int object_getServers(lwm2m_context_t * contextP)
             if (serverInstP == NULL)
             {
                 lwm2m_free(targetP);
-                lwm2m_free(tlvP);
+                lwm2m_tlv_free(size, tlvP);
                 return -1;
             }
             if (0 != prv_getMandatoryInfo(serverObjP, serverInstP->id, targetP))
             {
                 lwm2m_free(targetP);
-                lwm2m_free(tlvP);
+                lwm2m_tlv_free(size, tlvP);
                 return -1;
             }
             targetP->request = REQUEST_REG_REGISTER;
             targetP->blocksize = REST_MAX_CHUNK_SIZE;
             contextP->serverList = (lwm2m_server_t*)LWM2M_LIST_ADD(contextP->serverList, targetP);
         }
-        lwm2m_free(tlvP);
+        lwm2m_tlv_free(size, tlvP);
         securityInstP = securityInstP->next;
     }
 
@@ -767,7 +767,7 @@ int object_updateServersInfo(lwm2m_context_t * contextP, lwm2m_uri_t * uriP)
                     }
                 }
             }
-            lwm2m_tlv_free(1, tlvP);
+            lwm2m_tlv_free(size, tlvP);
             if (LWM2M_URI_IS_SET_INSTANCE(uriP)) break;
         }
         serverInstP = serverInstP->next;
