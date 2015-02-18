@@ -426,7 +426,7 @@ char * get_server_uri(lwm2m_object_t * objectP,
     {
         if (targetP->shortID == serverID)
         {
-            return strdup(targetP->uri);
+            return lwm2m_strdup(targetP->uri);
         }
     }
 
