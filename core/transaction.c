@@ -636,6 +636,7 @@ int transaction_send(lwm2m_context_t * contextP,
         if (NULL != transacP->buffer && length > transacP->buffer_size) {
             // old buffer too small
             lwm2m_free(transacP->buffer);
+            transacP->buffer = NULL;
         }
 
         if (NULL == transacP->buffer) {
