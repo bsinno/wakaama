@@ -351,7 +351,7 @@ void lwm2m_handle_packet(lwm2m_context_t * contextP,
                 transaction_handle_response(contextP, fromSessionH, message);
             }
         } /* Request or Response */
-
+        coap_free_header(message);
     } /* if (parsed correctly) */
     else
     {
