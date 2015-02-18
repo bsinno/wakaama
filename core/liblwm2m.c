@@ -90,13 +90,17 @@ void lwm2m_close(lwm2m_context_t * contextP)
 #ifdef LWM2M_CLIENT_MODE
     int i;
 
-    for (i = 0 ; i < contextP->numObject ; i++)
+    if (NULL != contextP->objectList)
     {
-        if (NULL != contextP->objectList[i]->closeFunc)
+        for (i = 0 ; i < contextP->numObject ; i++)
         {
-            contextP->objectList[i]->closeFunc(contextP->objectList[i]);
+            if (NULL != contextP->objectList[i]->closeFunc)
+            {
+                contextP->objectList[i]->closeFunc(contextP->objectList[i]);
+            }
+            lwm2m_free(contextP->objectList[i]);
         }
-        lwm2m_free(contextP->objectList[i]);
+        lwm2m_free(contextP->objectList);
     }
 
     while (NULL != contextP->serverList)
@@ -140,10 +144,6 @@ void lwm2m_close(lwm2m_context_t * contextP)
         lwm2m_free(targetP);
     }
 
-   if (NULL != contextP->objectList)
-    {
-        lwm2m_free(contextP->objectList);
-    }
 
     lwm2m_free(contextP->endpointName);
 #endif
@@ -198,7 +198,7 @@ int lwm2m_configure(lwm2m_context_t * contextP,
     }
     if (found != 0x07) return COAP_400_BAD_REQUEST;
 
-    contextP->endpointName = strdup(endpointName);
+    contextP->endpointName = lwm2m_strdup(endpointName);
     if (contextP->endpointName == NULL)
     {
         return COAP_500_INTERNAL_SERVER_ERROR;
@@ -206,7 +206,7 @@ int lwm2m_configure(lwm2m_context_t * contextP,
 
     if (msisdn != NULL)
     {
-        contextP->msisdn = strdup(msisdn);
+        contextP->msisdn = lwm2m_strdup(msisdn);
         if (contextP->msisdn == NULL)
         {
             return COAP_500_INTERNAL_SERVER_ERROR;
