@@ -194,7 +194,8 @@ static void * prv_connect_server(uint16_t serverID, void * userData)
         dataP->connList = newConnP;
     }
 
-    exit: free(uri);
+exit:
+    lwm2m_free(uri);
     return (void *) newConnP;
 }
 
@@ -311,6 +312,13 @@ static void prv_update(char * buffer, void * user_data)
     syntax_error: fprintf(stdout, "Syntax error !\n");
 }
 
+#ifdef MEMORY_TRACE
+static void prv_trace_memory(char * buffer, void * user_data)
+{
+    trace_print(0, 1);
+}
+#endif
+
 static void update_batterylevel(lwm2m_context_t * context, int enable) {
     if (enable) {
         static time_t next_change_time = 0;
@@ -358,15 +366,18 @@ int main(int argc, char *argv[])
      * The firsts tree are easy to understand, the callback is the function that will be called when this command is typed
      * and in the last one will be stored the lwm2m context (allowing access to the server settings and the objects).
      */
-    command_desc_t commands[] = { { "list", "List known servers.", NULL, prv_output_servers, NULL }, { "change",
-            "Change the value of resource.", " change URI [DATA]\r\n"
+    command_desc_t commands[] = {
+            { "list", "List known servers.", NULL, prv_output_servers, NULL },
+            { "change", "Change the value of resource.", " change URI [DATA]\r\n"
                     "   URI: uri of the resource such as /3/0, /3/0/2\r\n"
-                    "   DATA: (optional) new value\r\n", prv_change, NULL }, { "update",
-            "Trigger a registration update", " update SERVER\r\n"
-                    "   SERVER: short server id such as 123\r\n", prv_update, NULL }, { "quit",
-            "Quit the client gracefully.", NULL, prv_quit, NULL }, { "^C",
-            "Quit the client abruptly (without sending a de-register message).", NULL, NULL, NULL },
-
+                    "   DATA: (optional) new value\r\n", prv_change, NULL },
+            { "update", "Trigger a registration update", " update SERVER\r\n"
+                    "   SERVER: short server id such as 123\r\n", prv_update, NULL },
+#ifdef MEMORY_TRACE
+            { "mem", "memory trace.", NULL, prv_trace_memory, NULL },
+#endif
+            { "quit", "Quit the client gracefully.", NULL, prv_quit, NULL },
+            { "^C", "Quit the client abruptly (without sending a de-register message).", NULL, NULL, NULL },
     COMMAND_END_LIST };
 
     memset(&data, 0, sizeof(client_data_t));
@@ -511,6 +522,9 @@ int main(int argc, char *argv[])
         struct timeval tv;
         fd_set readfds;
 
+#ifdef MEMORY_TRACE
+        trace_print(100, 0);
+#endif
         if (g_reboot)
         {
             lwm2m_gettimeofday(&tv, NULL);
@@ -670,6 +684,10 @@ int main(int argc, char *argv[])
     }
     close(data.sock);
     connection_free(data.connList);
+
+#ifdef MEMORY_TRACE
+    trace_print(0, 1);
+#endif
 
     return 0;
 }

@@ -696,6 +696,13 @@ static void prv_quit(char * buffer,
     g_quit = 1;
 }
 
+#ifdef MEMORY_TRACE
+static void prv_trace_memory(char * buffer, void * user_data)
+{
+    trace_print(0, 1);
+}
+#endif
+
 void handle_sigint(int signum)
 {
     prv_quit(NULL, NULL);
@@ -757,7 +764,9 @@ int main(int argc, char *argv[])
                                             "   ATTRIB: attributes to be written as pmin=100\r\n"
                                             "Result will be displayed asynchronously.", prv_write_attrib_client, NULL},
             {"quit", "Quit the server.", NULL, prv_quit, NULL},
-
+#ifdef MEMORY_TRACE
+            { "mem", "memory trace.", NULL, prv_trace_memory, NULL },
+#endif
             COMMAND_END_LIST
     };
 
@@ -787,6 +796,9 @@ int main(int argc, char *argv[])
 
     while (0 == g_quit)
     {
+#ifdef MEMORY_TRACE
+        trace_print(100, 0);
+#endif
         FD_ZERO(&readfds);
         FD_SET(sock, &readfds);
         FD_SET(STDIN_FILENO, &readfds);
@@ -890,6 +902,9 @@ int main(int argc, char *argv[])
     lwm2m_close(lwm2mH);
     close(sock);
     connection_free(connList);
+#ifdef MEMORY_TRACE
+    trace_print(0, 1);
+#endif
 
     return 0;
 }
