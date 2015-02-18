@@ -59,10 +59,28 @@
 
 #ifndef LWM2M_EMBEDDED_MODE
 #define lwm2m_gettimeofday gettimeofday
+
+#ifdef MEMORY_TRACE
+#include <string.h>
+#include <stdlib.h>
+char* trace_strdup(const char* str, const char* file, const char* function, int lineno);
+void* trace_malloc(size_t size, const char* file, const char* function, int lineno);
+void trace_free(void* mem, const char* file, const char* function, int lineno);
+void trace_print(int loops, int level);
+#define lwm2m_strdup(S) trace_strdup(S, __FILE__, __FUNCTION__, __LINE__)
+#define lwm2m_malloc(S) trace_malloc(S, __FILE__, __FUNCTION__, __LINE__)
+#define lwm2m_free(M) trace_free(M, __FILE__, __FUNCTION__, __LINE__)
+#define strdup(S) trace_strdup(S, __FILE__, __FUNCTION__, __LINE__)
+#define malloc(S) trace_malloc(S, __FILE__, __FUNCTION__, __LINE__)
+#define free(M) trace_free(M, __FILE__, __FUNCTION__, __LINE__)
+#else
+#define lwm2m_strdup strdup
 #define lwm2m_malloc malloc
 #define lwm2m_free free
+#endif
 #else
 int lwm2m_gettimeofday(struct timeval *tv, void *p);
+char *lwm2m_strdup(const char* str);
 void *lwm2m_malloc(size_t s);
 void lwm2m_free(void *p);
 #endif
