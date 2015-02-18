@@ -224,8 +224,8 @@ static uint8_t prv_write(uint16_t instanceId,
     }
     else if (dataArray->id == 3) {
         uint32_t length = dataArray->length + 1;
-        free(targetP->blob);
-        targetP->blob = malloc(length);
+        lwm2m_free(targetP->blob);
+        targetP->blob = lwm2m_malloc(length);
         if (NULL == targetP->blob) return COAP_500_INTERNAL_SERVER_ERROR;
         targetP->blob_length = length;
         memcpy(targetP->blob, dataArray->value, dataArray->length);
@@ -246,8 +246,8 @@ static uint8_t prv_delete(uint16_t id,
     objectP->instanceList = lwm2m_list_remove(objectP->instanceList, id, (lwm2m_list_t **)&targetP);
     if (NULL == targetP) return COAP_404_NOT_FOUND;
 
-    free(targetP->blob);
-    free(targetP);
+    lwm2m_free(targetP->blob);
+    lwm2m_free(targetP);
 
     return COAP_202_DELETED;
 }
@@ -261,7 +261,7 @@ static uint8_t prv_create(uint16_t instanceId,
     uint8_t result;
 
 
-    targetP = (prv_instance_t *)malloc(sizeof(prv_instance_t));
+    targetP = (prv_instance_t *)lwm2m_malloc(sizeof(prv_instance_t));
     if (NULL == targetP) return COAP_500_INTERNAL_SERVER_ERROR;
     memset(targetP, 0, sizeof(prv_instance_t));
 
@@ -312,7 +312,7 @@ lwm2m_object_t * get_test_object()
 {
     lwm2m_object_t * testObj;
 
-    testObj = (lwm2m_object_t *)malloc(sizeof(lwm2m_object_t));
+    testObj = (lwm2m_object_t *)lwm2m_malloc(sizeof(lwm2m_object_t));
 
     if (NULL != testObj)
     {
@@ -324,13 +324,13 @@ lwm2m_object_t * get_test_object()
         testObj->objID = 1024;
         for (i=0 ; i < 3 ; i++)
         {
-            targetP = (prv_instance_t *)malloc(sizeof(prv_instance_t));
+            targetP = (prv_instance_t *)lwm2m_malloc(sizeof(prv_instance_t));
             if (NULL == targetP) return NULL;
             memset(targetP, 0, sizeof(prv_instance_t));
             targetP->shortID = 10 + i;
             targetP->test = 20 + i;
             targetP->blob_length = INITIAL_BLOB_SIZE;
-            targetP->blob = malloc(targetP->blob_length);
+            targetP->blob = lwm2m_malloc(targetP->blob_length);
             memset(targetP->blob, '0' + i, targetP->blob_length - 1);
             targetP->blob[targetP->blob_length - 1] = 0;
             testObj->instanceList = LWM2M_LIST_ADD(testObj->instanceList, targetP);
