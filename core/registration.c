@@ -139,6 +139,9 @@ static void prv_handleRegistrationReply(lwm2m_transaction_t * transacP,
         {
             LOG("server %d status REGISTERED, register succeeded\n", targetP->shortID);
             targetP->status = STATE_REGISTERED;
+            if (NULL != targetP->location) {
+                lwm2m_free(targetP->location);
+            }
             targetP->location = coap_get_multi_option_as_string(packet->location_path);
         }
         else
