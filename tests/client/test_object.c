@@ -308,6 +308,20 @@ static uint8_t prv_exec(uint16_t instanceId,
     }
 }
 
+static void prv_close(lwm2m_object_t * objectP)
+{
+    while (objectP->instanceList != NULL)
+    {
+        prv_instance_t * targetP;
+
+        targetP = (prv_instance_t *)objectP->instanceList;
+        objectP->instanceList = objectP->instanceList->next;
+
+        lwm2m_free(targetP->blob);
+        lwm2m_free(targetP);
+    }
+}
+
 lwm2m_object_t * get_test_object()
 {
     lwm2m_object_t * testObj;
@@ -348,6 +362,7 @@ lwm2m_object_t * get_test_object()
         testObj->deleteFunc = prv_delete;
         testObj->executeFunc = prv_exec;
         testObj->datatypeFunc = prv_datatype;
+        testObj->closeFunc = prv_close;
     }
 
     return testObj;

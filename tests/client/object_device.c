@@ -577,6 +577,11 @@ static uint8_t prv_device_execute(uint16_t instanceId,
     }
 }
 
+static void prv_device_close(lwm2m_object_t * objectP)
+{
+    lwm2m_free(objectP->userData);
+}
+
 lwm2m_object_t * get_object_device()
 {
     /*
@@ -605,6 +610,7 @@ lwm2m_object_t * get_object_device()
         deviceObj->writeFunc = prv_device_write;
         deviceObj->executeFunc = prv_device_execute;
         deviceObj->datatypeFunc = prv_device_datatype;  
+        deviceObj->closeFunc = prv_device_close;
         deviceObj->userData = lwm2m_malloc(sizeof(device_data_t));
 
         /*

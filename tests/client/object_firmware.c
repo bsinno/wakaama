@@ -213,6 +213,11 @@ static uint8_t prv_firmware_execute(uint16_t instanceId,
     }
 }
 
+static void prv_firmware_close(lwm2m_object_t * objectP)
+{
+    lwm2m_free(objectP->userData);
+}
+
 lwm2m_object_t * get_object_firmware()
 {
     /*
@@ -240,6 +245,7 @@ lwm2m_object_t * get_object_firmware()
         firmwareObj->readFunc = prv_firmware_read;
         firmwareObj->writeFunc = prv_firmware_write;
         firmwareObj->executeFunc = prv_firmware_execute;
+        firmwareObj->closeFunc = prv_firmware_close;
         firmwareObj->userData = lwm2m_malloc(sizeof(firmware_data_t));
 
         /*

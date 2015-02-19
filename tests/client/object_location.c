@@ -192,6 +192,11 @@ void location_setVelocity (lwm2m_object_t* locationObj, uint16_t bearing,
   pData->velocity[4] = speedUncertainty;
 }
 
+static void prv_location_close(lwm2m_object_t * objectP)
+{
+    lwm2m_free(objectP->userData);
+}
+
 /**
   * A convenience functon to set the location coordinates with its timestamp.
   * @see testMe()
@@ -246,6 +251,7 @@ lwm2m_object_t * get_object_location() {
     //locationObj->executeFunc = prv_location_execute;
     //locationObj->createFunc  = prv_location_create;
     //locationObj->deleteFunc  = prv_location_delete;
+    locationObj->closeFunc   = prv_location_close;
     locationObj->userData    = lwm2m_malloc(sizeof(location_data_t));
 
     // initialize private data structure containing the needed variables

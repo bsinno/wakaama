@@ -414,6 +414,11 @@ static uint8_t prv_write(uint16_t instanceId, int numData, lwm2m_tlv_t * dataArr
     return result;
 }
 
+static void prv_close(lwm2m_object_t * objectP)
+{
+    lwm2m_free(objectP->userData);
+}
+
 lwm2m_object_t * get_object_conn_m()
 {   //------------------------------------------------------------------- JH --
     /*
@@ -442,6 +447,7 @@ lwm2m_object_t * get_object_conn_m()
         connObj->writeFunc = prv_write;
         connObj->executeFunc = NULL;
         connObj->datatypeFunc = prv_datatype;
+        connObj->closeFunc = prv_close;
         connObj->userData = lwm2m_malloc(sizeof(conn_m_data_t));
 
         /*
