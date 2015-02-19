@@ -206,7 +206,10 @@ static int prv_register(lwm2m_context_t * contextP, lwm2m_server_t * server, uin
 
         coap_set_header_uri_path(transaction->message, "/"URI_REGISTRATION_SEGMENT);
         coap_set_header_uri_query(transaction->message, query);
-        coap_set_header_block2(transaction->message, 0, 0, REST_MAX_CHUNK_SIZE);
+
+        /* If bock 2 is used to indicate bocksize, californium 1.0.0 M3 may return
+         * response from previous request, So, temporary don't use it. */
+        /* coap_set_header_block2(transaction->message, 0, 0, REST_MAX_CHUNK_SIZE); */
 
         coap_set_payload(transaction->message, payload, payload_length);
 
