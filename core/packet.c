@@ -136,7 +136,7 @@ static struct _handle_result_ prv_handle_request(lwm2m_context_t * contextP, voi
             return result;
         }
 
-        blockwiseIn = blockwise_get(contextP, fromSessionH, message->code, uriP);
+        blockwiseIn = blockwise_get(contextP, BLOCK1, fromSessionH, message->code, uriP);
         if (NULL == blockwiseIn) {
             if (0 < block_num) {
                 result.responseCode = COAP_408_ENTITY_INCOMPLETE;
@@ -144,7 +144,7 @@ static struct _handle_result_ prv_handle_request(lwm2m_context_t * contextP, voi
             else {
                 uint32_t resource_size = 0;
                 coap_get_header_size1(message, &resource_size);
-                blockwiseIn = blockwise_new(contextP, fromSessionH, message->code, uriP, message, true, resource_size);
+                blockwiseIn = blockwise_new(contextP, BLOCK1, fromSessionH, message->code, uriP, NO_ERROR, message, true, resource_size);
                 if (NULL == blockwiseIn)
                 {
                     result.responseCode = COAP_413_ENTITY_TOO_LARGE;
@@ -192,10 +192,10 @@ static struct _handle_result_ prv_handle_request(lwm2m_context_t * contextP, voi
         block_size = *preferredBlocksize;
     }
 
-    /* observe requests (GET/OPTION(OBSERVE) have side effects and therefore must be always handled */
-    if (0 < block_num || message->code != COAP_GET || !IS_OPTION(message, COAP_OPTION_OBSERVE))
+    /* Only request for "next block" or GET without observe get their response from the blockwise buffer */
+    if (0 < block_num || (message->code == COAP_GET && !IS_OPTION(message, COAP_OPTION_OBSERVE)))
     {
-        blockwiseOut = blockwise_get(contextP, NULL, message->code, uriP);
+        blockwiseOut = blockwise_get(contextP, BLOCK2, fromSessionH, message->code, uriP);
     }
     if (NULL == blockwiseOut)
     {
@@ -228,14 +228,20 @@ static struct _handle_result_ prv_handle_request(lwm2m_context_t * contextP, voi
                 result.responseCode = BAD_REQUEST_4_00;
                 break;
         }
-        // restore original payload
-        message->payload = messageData;
-        message->payload_len = messageDataLength;
-
+        if (NULL != blockwiseIn) {
+            // restore original payload
+            message->payload = messageData;
+            message->payload_len = messageDataLength;
+        }
+        blockwiseOut = blockwise_get(contextP, BLOCK2, fromSessionH, message->code, uriP);
+        if (NULL != blockwiseOut) {
+            blockwise_remove(contextP, blockwiseOut);
+            blockwiseOut = NULL;
+        }
         if (result.responseCode < BAD_REQUEST_4_00 && block_size < response->payload_len)
         {
             // response payload too large, save it as blockwise data
-            blockwiseOut = blockwise_new(contextP, NULL, message->code, uriP, response, false, 0);
+            blockwiseOut = blockwise_new(contextP, BLOCK2, fromSessionH, message->code, uriP, result.responseCode, response, false, 0);
             if (NULL == blockwiseOut)
             {
                 result.responseCode = INTERNAL_SERVER_ERROR_5_00;
@@ -247,7 +253,7 @@ static struct _handle_result_ prv_handle_request(lwm2m_context_t * contextP, voi
         }
     }
     else {
-        result.responseCode = COAP_205_CONTENT;
+        result.responseCode = blockwiseOut->responseCode;
     }
 
     if (result.responseCode < BAD_REQUEST_4_00 && NULL != blockwiseOut)

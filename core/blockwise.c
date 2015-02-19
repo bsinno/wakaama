@@ -24,7 +24,7 @@
  *  - blockwise request, implemented using COAP option block1 and optional size1
  *  - blockwise response, implemented using COAP option block2 and optional size2
  *
- *  The COAP client handles the blockwise transfer within a "transaction".
+ *  The COAP client handles the blockwise transfer within a "transaction.c".
  *  If a request with too large payload is sent (transaction_send), it's split
  *  into blockwise transfers starting with the first block and using options block1
  *  and size1. When the COAP client receives the response containing option block1
@@ -36,9 +36,11 @@
  *  In both cases the payload is stored or accumulated in a "_large_buffer_"
  *  assigned to the transaction.
  *
- *  The COAP server handles the blockwise transfer in "packet" resource related.
- *  Blockwise requests are accumulated in "lwm2m_blockwise_t" related to the client/uri pair,
- *  and blockwise responses is stored in "lwm2m_blockwise_t" related to the uri only.
+ *  The COAP server handles the blockwise transfer in "packet.c" resource related.
+ *  Blockwise requests are accumulated in "lwm2m_blockwise_t" related to the client/method/uri tripple,
+ *  and blockwise responses is stored in "lwm2m_blockwise_t" related also to the client/method/uri tripple.
+ *  For blockwise responses to GET requests, the client is ignored, so all clients share the same blockwise
+ *  buffer for the same resource.
  *  Request with option block1 are accumulated and responded with option block1 and
  *  COAP_231_CONTINUE (see prv_handle_request). When the blockwise request is transfered
  *  completely, its processed (see prv_handle_request).
@@ -50,7 +52,7 @@
  *
  *  Known limitations:
  *  13.02.2015 Content type is currently not supported.
- *  17.02.2015 Changing the blocksize seems not to work with californium/leshan
+ *  17.02.2015 Changing the blocksize seems not to work (tested with californium 1.0.0.M3/leshan)
  *
  ********************************************************************************/
 
@@ -121,12 +123,15 @@ static void prv_blockwise_free(lwm2m_blockwise_t* remove)
 /**
  * Use "fromSessionH" for blockwise requests. Use NULL as "fromSessionH" for blockwise responses.
  */
-lwm2m_blockwise_t* blockwise_get(lwm2m_context_t * contextP, void * fromSessionH, coap_method_t method, const lwm2m_uri_t * uriP)
+lwm2m_blockwise_t* blockwise_get(lwm2m_context_t * contextP, lwm2m_blockwise_type_t type, void * fromSessionH, coap_method_t method, const lwm2m_uri_t * uriP)
 {
     lwm2m_blockwise_t* current = contextP->blockwiseList;
+    // Ignore client for GET/BLOCK2
+    if ((type == BLOCK2) && (method == COAP_GET)) fromSessionH = NULL;
     while (NULL != current)
     {
         if ((current->method == method) &&
+            (current->type == type) &&
             (current->fromSessionH == fromSessionH) &&
             (0 == uri_compare(&current->uri, uriP)))
         {
@@ -142,12 +147,15 @@ lwm2m_blockwise_t* blockwise_get(lwm2m_context_t * contextP, void * fromSessionH
 /**
  * Use "fromSessionH" for blockwise requests. Use NULL as "fromSessionH" for blockwise responses.
  */
-lwm2m_blockwise_t * blockwise_new(lwm2m_context_t * contextP, void * fromSessionH, coap_method_t method, const lwm2m_uri_t * uriP, coap_packet_t * messageP, bool detach, uint32_t size)
+lwm2m_blockwise_t * blockwise_new(lwm2m_context_t * contextP, lwm2m_blockwise_type_t type, void * fromSessionH, coap_method_t method, const lwm2m_uri_t * uriP, coap_status_t responseCode, coap_packet_t * messageP, bool detach, uint32_t size)
 {
     lwm2m_blockwise_t* result = (lwm2m_blockwise_t *) lwm2m_malloc(sizeof(lwm2m_blockwise_t));
     if (NULL == result)
         return NULL;
     memset(result, 0, sizeof(lwm2m_blockwise_t));
+
+    // Ignore client for GET/BLOCK2
+    if ((type == BLOCK2) && (method == COAP_GET)) fromSessionH = NULL;
 
     if (detach)
     {
@@ -170,6 +178,8 @@ lwm2m_blockwise_t * blockwise_new(lwm2m_context_t * contextP, void * fromSession
 
     result->fromSessionH = fromSessionH;
     result->method = method;
+    result->type = type;
+    result->responseCode = responseCode;
     result->uri = *uriP;
     result->etag_len = messageP->etag_len;
     if (0 < result->etag_len)
@@ -189,7 +199,7 @@ lwm2m_blockwise_t * blockwise_new(lwm2m_context_t * contextP, void * fromSession
     return result;
 }
 
-void blockwise_prepare(lwm2m_blockwise_t * blockwiseP, uint32_t block_num, uint16_t block_size,
+coap_status_t blockwise_prepare(lwm2m_blockwise_t * blockwiseP, uint32_t block_num, uint16_t block_size,
         coap_packet_t * response)
 {
     uint32_t block_offset = block_num * block_size;
@@ -213,6 +223,7 @@ void blockwise_prepare(lwm2m_blockwise_t * blockwiseP, uint32_t block_num, uint1
     prv_blockwise_set_time(blockwiseP);
     LOG("  Blockwise: prepare bs %d, index %d, offset %d (%s)\r\n", block_size, block_num, block_offset,
             more ? "more..." : "last");
+    return blockwiseP->responseCode;
 }
 
 coap_status_t blockwise_append(lwm2m_blockwise_t * blockwiseP, uint32_t block_offset, coap_packet_t * response)
@@ -245,13 +256,15 @@ void blockwise_remove(lwm2m_context_t * contextP, lwm2m_blockwise_t* remove)
     }
 }
 
-void blockwise_remove_all(lwm2m_context_t * contextP, const lwm2m_uri_t * uriP)
+void blockwise_remove_all_block2_get(lwm2m_context_t * contextP, const lwm2m_uri_t * uriP)
 {
     lwm2m_blockwise_t* current = contextP->blockwiseList;
     lwm2m_blockwise_t* prev = NULL;
     while (NULL != current)
     {
-        if (0 == uri_match(&(current->uri), uriP))
+        if ((BLOCK2 == current->type) &&
+            (COAP_GET == current->method) &&
+            (0 == uri_match(&(current->uri), uriP)))
         {
             lwm2m_blockwise_t* next = current->next;
             if (NULL == prev)

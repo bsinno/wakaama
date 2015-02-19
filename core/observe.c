@@ -296,7 +296,7 @@ coap_status_t lwm2m_sendNotification(lwm2m_context_t * contextP, lwm2m_watcher_t
     {
         if (NULL == data->blockwiseP)
         {
-            data->blockwiseP = blockwise_new(contextP, NULL, COAP_GET, uriP, &message, false, 0);
+            data->blockwiseP = blockwise_new(contextP, BLOCK2, NULL, COAP_GET, uriP, COAP_205_CONTENT, &message, false, 0);
         }
         blockwise_prepare(data->blockwiseP, 0, watcherP->blockSize, &message);
     }
@@ -356,7 +356,7 @@ void lwm2m_resource_value_changed(lwm2m_context_t * contextP,
 {
     obs_list_t * listP;
 
-    blockwise_remove_all(contextP, uriP);
+    blockwise_remove_all_block2_get(contextP, uriP);
 
     /* check for changes of server values */
     if (LWM2M_SERVER_OBJECT_ID == uriP->objectId) {
