@@ -141,7 +141,7 @@ static struct _handle_result_ prv_handle_request(lwm2m_context_t * contextP, voi
             if (0 < block_num) {
                 result.responseCode = COAP_408_ENTITY_INCOMPLETE;
             }
-            else {
+            else if (block_more) {
                 uint32_t resource_size = 0;
                 coap_get_header_size1(message, &resource_size);
                 blockwiseIn = blockwise_new(contextP, BLOCK1, fromSessionH, message->code, uriP, NO_ERROR, message, true, resource_size);
