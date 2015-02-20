@@ -341,11 +341,14 @@ coap_status_t blockwise_append_large_buffer(large_buffer_t * large_buffer, uint3
 
     LOG("Blockwise: append %u bytes (at %lu, %lu bytes before)\n", (unsigned int) response->payload_len, (unsigned long)block_offset, (unsigned long)large_buffer->length);
 
-    /* missing content? */
-    if (large_buffer->length < block_offset) return COAP_408_ENTITY_INCOMPLETE;
+    /* repeated last block ? */
+    if (length == block_offset + response->payload_len) return NO_ERROR;
 
-    /* already appended = */
-    if (large_buffer->length >= block_offset + response->payload_len) return NO_ERROR;
+    /* restart block wise transfer */
+    if (0 == block_offset) length = 0;
+
+    /* missing content? out of order content ?*/
+    if (length != block_offset) return COAP_408_ENTITY_INCOMPLETE;
 
     large_buffer->length = block_offset + response->payload_len;
     if (large_buffer->length > large_buffer->size)
