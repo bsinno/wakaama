@@ -37,22 +37,25 @@
  *  assigned to the transaction.
  *
  *  The COAP server handles the blockwise transfer in "packet.c" resource related.
- *  Blockwise requests are accumulated in "lwm2m_blockwise_t" related to the client/method/uri tripple,
- *  and blockwise responses is stored in "lwm2m_blockwise_t" related also to the client/method/uri tripple.
- *  For blockwise responses to GET requests, the client is ignored, so all clients share the same blockwise
- *  buffer for the same resource.
+ *  Blockwise requests are accumulated in "lwm2m_blockwise_t" and blockwise responses
+ *  are stored in "lwm2m_blockwise_t" related to the client/method/uri tripple.
+ *  For blockwise responses to GET requests, the client is ignored, so all clients
+ *  share the same blockwise buffer for the same resource.
  *  Request with option block1 are accumulated and responded with option block1 and
  *  COAP_231_CONTINUE (see prv_handle_request). When the blockwise request is transfered
  *  completely, its processed (see prv_handle_request).
  *  If a response is too large, it's split into blockwise transfer and the first block
  *  is sent using option block2 and size2. When the COAP server receives the next request
  *  with option block2 for that resource, it send the next block with option2.
- *  When for COAP_DEFAULT_MAX_AGE no request with the uri for that resource is received,
- *  the data is freed (see blockwise_free).
+ *  When for COAP_DEFAULT_MAX_AGE no request with the client/method/uri triple for that resource
+ *  is received, the data is freed (see blockwise_free).
  *
  *  Known limitations:
  *  13.02.2015 Content type is currently not supported.
- *  17.02.2015 Changing the blocksize seems not to work (tested with californium 1.0.0.M3/leshan)
+ *  17.02.2015 Changing the blocksize seems not to work
+ *             (tested with californium 1.0.0.M3/leshan, so configure the values
+ *             MAX_MESSAGE_SIZE and PREFERRED_BLOCK_SIZE in californium.properties
+ *             according your usage.)
  *
  ********************************************************************************/
 
