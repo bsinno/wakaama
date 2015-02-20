@@ -285,6 +285,17 @@ void blockwise_remove_all_block2_get(lwm2m_context_t * contextP, const lwm2m_uri
     }
 }
 
+void blockwise_close(lwm2m_context_t * contextP)
+{
+    lwm2m_blockwise_t* current = contextP->blockwiseList;
+    while (NULL != current)
+    {
+        lwm2m_blockwise_t* next = current->next;
+        prv_blockwise_free(current);
+        current = next;
+    }
+}
+
 /**
  * Check for timeouts of blockwise transfers.
  */

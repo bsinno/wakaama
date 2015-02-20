@@ -170,6 +170,8 @@ void lwm2m_close(lwm2m_context_t * contextP)
         transaction_free(transacP);
     }
 
+    blockwise_close(contextP);
+
     lwm2m_free(contextP);
 }
 
